@@ -1,0 +1,573 @@
+// CTP Work — schema de dados completo (seção 5 do prompt mestre)
+// Dev: SQLite (zero-install). Produção: trocar provider para "postgresql" + DATABASE_URL.
+// SQLite não suporta enums nativos no Prisma: valores são strings restritas por
+// constantes TS em src/lib/constants.ts + validação Zod nas rotas.
+// Isolamento por contratante é aplicado na camada de aplicação (ver src/lib/tenant.ts),
+// não via RLS nativo do banco — decisão registrada na seção 12 do prompt mestre.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ---------- Cadastros de apoio (5.7) ----------
+
+model Setor {
+  id        String   @id @default(cuid())
+  nome      String   @unique
+  createdAt DateTime @default(now())
+
+  usuarios               User[]
+  memorandosDestinatario MemorandoSetor[]
+}
+
+model Municipio {
+  id           String   @id @default(cuid())
+  nome         String
+  contatoNome  String?
+  contatoEmail String?
+  contatoFone  String?
+  createdAt    DateTime @default(now())
+
+  usuariosExternos User[]
+  contratos        Contrato[]
+  projetos         Projeto[]
+  conversas        Conversa[]
+}
+
+model User {
+  id            String    @id @default(cuid())
+  nome          String
+  email         String    @unique
+  passwordHash  String
+  tipo          String    // INTERNO | EXTERNO
+  perfilInterno String?   // COLABORADOR | GESTOR (só quando tipo = INTERNO)
+  setorId       String?
+  setor         Setor?    @relation(fields: [setorId], references: [id])
+  municipioId   String?   // só quando tipo = EXTERNO
+  municipio     Municipio? @relation(fields: [municipioId], references: [id])
+  receberEmail  Boolean   @default(true) // avisos também por e-mail (a pessoa escolhe em "Minha conta")
+  // Acesso desativado pelo gestor (ex.: servidor que saiu da prefeitura): não entra mais, é
+  // desconectado na hora e sai das listas de escolha e dos avisos — o histórico fica intacto.
+  ativo         Boolean   @default(true)
+  desativadoEm  DateTime?
+  createdAt     DateTime  @default(now())
+
+  tokensSenha          TokenSenha[]
+  memorandosCriados    Memorando[]      @relation("MemorandoCriador")
+  memorandosAC         Memorando[]      @relation("MemorandoAC")
+  memorandosCiencia    MemorandoCiencia[]
+  visualizacoesDocumento VisualizacaoDocumento[]
+  anotacoes            AnotacaoDocumento[] @relation("AnotacaoAutor")
+  anotacoesResolvidas  AnotacaoDocumento[] @relation("AnotacaoResolvidaPor")
+  respostasAnotacao    RespostaAnotacao[]
+  contratosResponsavel Contrato[]       @relation("ContratoResponsavel")
+  projetosResponsavel  Projeto[]        @relation("ProjetoResponsavel")
+  etapasResponsavel    EtapaProjeto[]   @relation("EtapaResponsavel")
+  revisoes             UnidadeRevisao[]
+  comentariosDocumento ComentarioDocumento[]
+  mensagens            MensagemChat[]
+  conversasCriadas     Conversa[]       @relation("ConversaCriador")
+  mensagensConversa    MensagemConversa[]
+  leiturasConversa     LeituraConversa[]
+  signaturas           Signatario[]
+  notificacoes         Notificacao[]
+  auditLogs            AuditLog[]
+}
+
+model ModeloFormulario {
+  id        String   @id @default(cuid())
+  nome      String
+  tipo      String   // MEMORANDO | CONTRATO
+  campos    String   // JSON: [{chave, label, tipo, obrigatorio}]
+  createdAt DateTime @default(now())
+
+  memorandos Memorando[]
+}
+
+// ---------- 5.1 Memorando ----------
+
+model Memorando {
+  id           String   @id @default(cuid())
+  codigo       String   @unique
+  acUserId     String?
+  ac           User?    @relation("MemorandoAC", fields: [acUserId], references: [id])
+  assunto      String
+  corpo        String
+  modeloId     String?
+  modelo       ModeloFormulario? @relation(fields: [modeloId], references: [id])
+  camposModelo String?  // JSON com valores preenchidos do modelo, se houver
+  status       String   @default("ABERTO") // ABERTO | EM_EXECUCAO | CONCLUIDO | CANCELADO
+  criadoPorId  String
+  criadoPor    User     @relation("MemorandoCriador", fields: [criadoPorId], references: [id])
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  setores         MemorandoSetor[]
+  anexos          Anexo[]
+  fluxoAssinatura FluxoAssinatura?
+  marcadosCiencia MemorandoCiencia[]
+}
+
+// Marcação leve "para ciência": notifica a pessoa, sem exigir assinatura (diferente do FluxoAssinatura).
+model MemorandoCiencia {
+  memorandoId String
+  memorando   Memorando @relation(fields: [memorandoId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User      @relation(fields: [userId], references: [id])
+  createdAt   DateTime  @default(now())
+
+  @@id([memorandoId, userId])
+}
+
+model MemorandoSetor {
+  memorandoId String
+  memorando   Memorando @relation(fields: [memorandoId], references: [id], onDelete: Cascade)
+  setorId     String
+  setor       Setor     @relation(fields: [setorId], references: [id])
+
+  @@id([memorandoId, setorId])
+}
+
+// ---------- 5.2 Contrato ----------
+
+model Contrato {
+  id            String    @id @default(cuid())
+  codigo        String    @unique
+  objeto        String
+  contratanteId String
+  contratante   Municipio @relation(fields: [contratanteId], references: [id])
+  etapaAtual    String    // chave da etapa dentro da máquina de estado (seção 6.2)
+  responsavelId String
+  responsavel   User      @relation("ContratoResponsavel", fields: [responsavelId], references: [id])
+  tags          String?   // JSON string[]
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  anexos          Anexo[]
+  fluxoAssinatura FluxoAssinatura?
+  projetos        Projeto[]
+  conversas       Conversa[]
+}
+
+// ---------- 5.3 Projeto ----------
+
+model Projeto {
+  id                String    @id @default(cuid())
+  codigo            String    @unique
+  tipo              String    // ESTATUTO_PCCS | PLANO_DIRETOR | PERSONALIZADO
+  contratanteId     String
+  contratante       Municipio @relation(fields: [contratanteId], references: [id])
+  contratoOrigemId  String
+  contratoOrigem    Contrato  @relation(fields: [contratoOrigemId], references: [id])
+  dataVigencia      DateTime
+  responsavelId     String
+  responsavel       User      @relation("ProjetoResponsavel", fields: [responsavelId], references: [id])
+  tags              String?   // JSON string[]
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  etapas            EtapaProjeto[]
+  eventosCronograma EventoCronograma[]
+  conversas         Conversa[]
+}
+
+model EventoCronograma {
+  id              String   @id @default(cuid())
+  projetoId       String
+  projeto         Projeto  @relation(fields: [projetoId], references: [id], onDelete: Cascade)
+  data            DateTime
+  titulo          String
+  descricao       String?
+  responsavelNome String
+  createdAt       DateTime @default(now())
+}
+
+// ---------- 5.4 Etapa de Projeto (entidade genérica) ----------
+
+model EtapaProjeto {
+  id                 String    @id @default(cuid())
+  projetoId          String
+  projeto            Projeto   @relation(fields: [projetoId], references: [id], onDelete: Cascade)
+  nome               String
+  ordem              Int
+  tipoFluxo          String    // ESTATUTO_PCCS | PLANO_DIRETOR | PERSONALIZADO
+  modoRevisao        String    @default("ARTIGO") // ARTIGO | DOCUMENTO_INTEIRO (decisão pendente 9.1)
+  status             String    @default("NAO_INICIADA") // NAO_INICIADA | EM_ANDAMENTO | AGUARDANDO_MUNICIPIO | CONCLUIDA
+  prazo              DateTime?
+  responsavelId      String
+  responsavel        User      @relation("EtapaResponsavel", fields: [responsavelId], references: [id])
+  formularioConfigId String?   // ModeloFormulario aplicável (só "Documentos iniciais")
+  // Capacidades da etapa (persistidas em vez de inferidas pelo nome — fiel ao desenho original)
+  temInformacoesProjeto Boolean @default(false) // tela "Informações iniciais": dados do projeto + cronograma
+  temFormulario      Boolean   @default(false)
+  temChecklist       Boolean   @default(false)
+  temRevisao         Boolean   @default(false)
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  respostaFormulario FormularioResposta?
+  checklistItens     ChecklistItem[]
+  documentos         DocumentoVersionado[]
+  mensagens          MensagemChat[]
+
+  @@index([projetoId, ordem])
+}
+
+model FormularioResposta {
+  id           String       @id @default(cuid())
+  etapaId      String       @unique
+  etapa        EtapaProjeto @relation(fields: [etapaId], references: [id], onDelete: Cascade)
+  respostas    String       // JSON {chave: valor}
+  enviadoPorId String
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+}
+
+model ChecklistItem {
+  id        String   @id @default(cuid())
+  etapaId   String
+  etapa     EtapaProjeto @relation(fields: [etapaId], references: [id], onDelete: Cascade)
+  nome      String
+  status    String   @default("PENDENTE") // PENDENTE | ENVIADO | APROVADO
+  arquivoId String?  @unique
+  arquivo   Anexo?   @relation(fields: [arquivoId], references: [id])
+  createdAt DateTime @default(now())
+}
+
+// ---------- 5.5 Revisão de Minuta ----------
+
+// Documento da etapa, editado dentro do sistema (editor tipo Word). Cada versão é um registro:
+// enquanto `enviadoEm` é nulo é um RASCUNHO que só o CTP vê e edita; ao enviar ao município a
+// versão congela (o texto nunca mais muda) e passa a receber grifos/comentários. A versão
+// seguinte nasce como cópia da anterior. `conteudo` é o JSON do editor (TipTap/ProseMirror).
+// Versões antigas, anteriores ao editor, têm só o arquivo anexado + seções/unidades legadas.
+model DocumentoVersionado {
+  id          String       @id @default(cuid())
+  etapaId     String
+  etapa       EtapaProjeto @relation(fields: [etapaId], references: [id], onDelete: Cascade)
+  versao      Int
+  titulo      String?
+  nomeArquivo String
+  arquivoId   String?      @unique
+  arquivo     Anexo?       @relation(fields: [arquivoId], references: [id])
+  conteudo    String?
+  enviadoEm   DateTime?
+  criadoPorId String
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @default(now()) @updatedAt
+
+  unidadesRevisao UnidadeRevisao[]
+  secoes          SecaoDocumento[]
+  visualizacoes   VisualizacaoDocumento[]
+  anotacoes       AnotacaoDocumento[]
+
+  @@index([etapaId, versao])
+}
+
+// Grifo, comentário ou posição (concordo/discordo) sobre um trecho de uma versão do documento.
+// Fica fora do texto (o conteúdo da versão enviada é imutável): ancorado pela posição no
+// documento (de/ate, coordenadas ProseMirror) + o trecho citado, que o servidor confere.
+model AnotacaoDocumento {
+  id             String              @id @default(cuid())
+  documentoId    String
+  documento      DocumentoVersionado @relation(fields: [documentoId], references: [id], onDelete: Cascade)
+  autorId        String
+  autor          User                @relation("AnotacaoAutor", fields: [autorId], references: [id])
+  de             Int
+  ate            Int
+  trecho         String
+  tipo           String              // GRIFO | COMENTARIO | CONCORDO | DISCORDO | SUGESTAO
+  cor            String?             // só GRIFO: amarelo | verde | azul | rosa
+  texto          String?             // comentário / justificativa
+  // SUGESTAO: nova redação proposta pelo município para o trecho ("" = suprimir o trecho). O texto
+  // da versão enviada não muda; o CTP aceita (aplica no rascunho da próxima versão) ou recusa.
+  sugestao       String?
+  decisao        String?             // só SUGESTAO: ACEITA | RECUSADA (nulo = aguardando o CTP)
+  resolvido      Boolean             @default(false)
+  resolvidoPorId String?
+  resolvidoPor   User?               @relation("AnotacaoResolvidaPor", fields: [resolvidoPorId], references: [id])
+  resolvidoEm    DateTime?
+  createdAt      DateTime            @default(now())
+
+  respostas RespostaAnotacao[]
+
+  @@index([documentoId])
+}
+
+model RespostaAnotacao {
+  id         String            @id @default(cuid())
+  anotacaoId String
+  anotacao   AnotacaoDocumento @relation(fields: [anotacaoId], references: [id], onDelete: Cascade)
+  autorId    String
+  autor      User              @relation(fields: [autorId], references: [id])
+  texto      String
+  createdAt  DateTime          @default(now())
+
+  @@index([anotacaoId])
+}
+
+// Leitura obrigatória (10.x): o município precisa confirmar que abriu esta versão do documento
+// antes de poder grifar, comentar ou aprovar/reprovar qualquer unidade de revisão dela.
+model VisualizacaoDocumento {
+  id            String              @id @default(cuid())
+  documentoId   String
+  documento     DocumentoVersionado @relation(fields: [documentoId], references: [id], onDelete: Cascade)
+  userId        String
+  user          User                @relation(fields: [userId], references: [id])
+  visualizadoEm DateTime            @default(now())
+
+  @@unique([documentoId, userId])
+}
+
+model UnidadeRevisao {
+  id            String              @id @default(cuid())
+  documentoId   String
+  documento     DocumentoVersionado @relation(fields: [documentoId], references: [id], onDelete: Cascade)
+  tipo          String              // ARTIGO | DOCUMENTO_INTEIRO
+  identificador String              // nº do artigo, ou "documento_inteiro"
+  conteudo      String?             // texto integral do artigo exibido na revisão (modo ARTIGO)
+  trechoInicio  Int?
+  trechoFim     Int?
+  status        String              @default("PENDENTE") // PENDENTE | APROVADO | REPROVADO
+  comentario    String?
+  autorId       String
+  autor         User                @relation(fields: [autorId], references: [id])
+  createdAt     DateTime            @default(now())
+
+  @@index([documentoId])
+}
+
+// ---------- Seções + grifo/comentário posicional (modo DOCUMENTO_INTEIRO — seção 7) ----------
+// "Comentar e grifar o texto inteiro": visualizador com seleção de trecho (highlight) +
+// comentário anexado ao trecho, padrão de revisão colaborativa tipo Word/PDF. As seções são
+// o conteúdo principal exibido nessa etapa (equivalente aos "artigos" do modo ARTIGO).
+
+model SecaoDocumento {
+  id          String              @id @default(cuid())
+  documentoId String
+  documento   DocumentoVersionado @relation(fields: [documentoId], references: [id], onDelete: Cascade)
+  ordem       Int
+  titulo      String
+  conteudo    String
+  createdAt   DateTime            @default(now())
+
+  comentarios ComentarioDocumento[]
+
+  @@index([documentoId, ordem])
+}
+
+model ComentarioDocumento {
+  id           String         @id @default(cuid())
+  secaoId      String
+  secao        SecaoDocumento @relation(fields: [secaoId], references: [id], onDelete: Cascade)
+  trechoInicio Int
+  trechoFim    Int
+  trechoTexto  String
+  comentario   String
+  resolvido    Boolean        @default(false)
+  autorId      String
+  autor        User           @relation(fields: [autorId], references: [id])
+  createdAt    DateTime       @default(now())
+
+  @@index([secaoId])
+}
+
+// ---------- 5.6 Mensagem de Chat ----------
+
+model MensagemChat {
+  id        String       @id @default(cuid())
+  etapaId   String
+  etapa     EtapaProjeto @relation(fields: [etapaId], references: [id], onDelete: Cascade)
+  autorId   String
+  autor     User         @relation(fields: [autorId], references: [id])
+  texto     String
+  anexoId   String?      @unique
+  anexo     Anexo?       @relation(fields: [anexoId], references: [id])
+  createdAt DateTime     @default(now())
+
+  @@index([etapaId, createdAt])
+}
+
+// ---------- Conversas com o município (fora das etapas) ----------
+// Canal para o que não pertence a uma etapa: dúvidas sobre o contrato, agendamento de reunião,
+// pedidos gerais, ofícios. Cada conversa é de UM município (isolamento igual ao resto) e pode,
+// opcionalmente, citar um contrato ou projeto. `ultimaMensagemEm` ordena a caixa de entrada;
+// `LeituraConversa` guarda até quando cada pessoa leu, para marcar as não lidas.
+
+model Conversa {
+  id               String    @id @default(cuid())
+  municipioId      String
+  municipio        Municipio @relation(fields: [municipioId], references: [id])
+  assunto          String
+  contratoId       String?
+  contrato         Contrato? @relation(fields: [contratoId], references: [id])
+  projetoId        String?
+  projeto          Projeto?  @relation(fields: [projetoId], references: [id])
+  criadoPorId      String
+  criadoPor        User      @relation("ConversaCriador", fields: [criadoPorId], references: [id])
+  status           String    @default("ABERTA") // ABERTA | ENCERRADA
+  ultimaMensagemEm DateTime  @default(now())
+  createdAt        DateTime  @default(now())
+
+  mensagens MensagemConversa[]
+  leituras  LeituraConversa[]
+
+  @@index([municipioId, ultimaMensagemEm])
+}
+
+model MensagemConversa {
+  id         String   @id @default(cuid())
+  conversaId String
+  conversa   Conversa @relation(fields: [conversaId], references: [id], onDelete: Cascade)
+  autorId    String
+  autor      User     @relation(fields: [autorId], references: [id])
+  texto      String
+  anexoId    String?  @unique
+  anexo      Anexo?   @relation(fields: [anexoId], references: [id])
+  createdAt  DateTime @default(now())
+
+  @@index([conversaId, createdAt])
+}
+
+model LeituraConversa {
+  conversaId String
+  conversa   Conversa @relation(fields: [conversaId], references: [id], onDelete: Cascade)
+  userId     String
+  user       User     @relation(fields: [userId], references: [id])
+  lidoEm     DateTime @default(now())
+
+  @@id([conversaId, userId])
+}
+
+// ---------- Arquivos ----------
+
+model Anexo {
+  id           String   @id @default(cuid())
+  nomeOriginal String
+  caminho      String
+  tamanho      Int
+  tipoMime     String
+  createdAt    DateTime @default(now())
+
+  memorandoId  String?
+  memorando    Memorando? @relation(fields: [memorandoId], references: [id])
+  contratoId   String?
+  contrato     Contrato?  @relation(fields: [contratoId], references: [id])
+
+  checklistItem    ChecklistItem?
+  documentoVersao  DocumentoVersionado?
+  mensagemChat     MensagemChat?
+  mensagemConversa MensagemConversa?
+}
+
+// ---------- Assinatura digital (9.2 — desacoplada via interface própria) ----------
+
+model FluxoAssinatura {
+  id          String     @id @default(cuid())
+  memorandoId String?    @unique
+  memorando   Memorando? @relation(fields: [memorandoId], references: [id])
+  contratoId  String?    @unique
+  contrato    Contrato?  @relation(fields: [contratoId], references: [id])
+  concluido   Boolean    @default(false)
+  createdAt   DateTime   @default(now())
+
+  signatarios Signatario[]
+}
+
+model Signatario {
+  id           String    @id @default(cuid())
+  fluxoId      String
+  fluxo        FluxoAssinatura @relation(fields: [fluxoId], references: [id], onDelete: Cascade)
+  userId       String?
+  user         User?     @relation(fields: [userId], references: [id])
+  nomeExterno  String?   // signatário externo sem conta (ex.: prefeito)
+  tipo         String    // INTERNO | EXTERNO
+  status       String    @default("PENDENTE") // PENDENTE | ASSINADO
+  assinadoEm   DateTime?
+  ipAssinatura String?
+  provider     String    @default("local") // ver src/lib/signature/provider.ts
+  createdAt    DateTime  @default(now())
+}
+
+// ---------- Notificações e auditoria ----------
+
+model Notificacao {
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id])
+  tipo         String
+  mensagem     String
+  entidadeTipo String?
+  entidadeId   String?
+  lida         Boolean  @default(false)
+  // Envio por e-mail (src/lib/email): nulo = ainda não processado; ENVIADO | IGNORADO | FALHOU.
+  emailStatus  String?
+  createdAt    DateTime @default(now())
+
+  @@index([userId, lida])
+  @@index([emailStatus])
+}
+
+// "Esqueci minha senha": link de uso único com validade curta. Só o hash do token fica no banco.
+model TokenSenha {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique
+  expiraEm  DateTime
+  usadoEm   DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId, createdAt])
+}
+
+model AuditLog {
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id])
+  acao         String
+  entidadeTipo String
+  entidadeId   String
+  detalhe      String?
+  createdAt    DateTime @default(now())
+
+  @@index([entidadeTipo, entidadeId])
+}
+
+// ---------- Fluxos de projeto configuráveis ----------
+// Autonomia para o Gestor criar novos tipos de projeto (ex.: "Plano de Mobilidade") e montar/editar
+// o fluxo de etapas de cada um sem depender de alteração de código. `chave` é o identificador
+// estável gravado em Projeto.tipo e EtapaProjeto.tipoFluxo — nunca muda depois de criado. Editar o
+// modelo (adicionar/remover/reordenar EtapaModelo) só afeta projetos criados depois da edição —
+// projetos já existentes têm suas próprias EtapaProjeto, independentes deste modelo.
+
+model TipoProjetoModelo {
+  id        String   @id @default(cuid())
+  chave     String   @unique
+  nome      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  etapas EtapaModelo[]
+}
+
+model EtapaModelo {
+  id                  String            @id @default(cuid())
+  tipoProjetoModeloId String
+  tipoProjetoModelo   TipoProjetoModelo @relation(fields: [tipoProjetoModeloId], references: [id], onDelete: Cascade)
+  ordem               Int
+  nome                String
+  temInformacoesProjeto Boolean @default(false)
+  temFormulario       Boolean  @default(false)
+  temChecklist        Boolean  @default(false)
+  temRevisao          Boolean  @default(false)
+  modoRevisao         String   @default("ARTIGO") // ARTIGO | DOCUMENTO_INTEIRO — só relevante quando temRevisao
+  createdAt           DateTime @default(now())
+
+  @@index([tipoProjetoModeloId, ordem])
+}
