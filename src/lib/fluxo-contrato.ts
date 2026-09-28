@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { lerIds } from "@/lib/permissoes";
 
 /**
  * Fluxos de contrato configuráveis (Cadastros › Fluxos de contrato). Cada contrato tem a sua
@@ -67,6 +68,7 @@ export async function garantirEtapasDosContratos(contratoIds: string[]) {
             curto: e.curto,
             exigeAssinaturas: e.exigeAssinaturas,
             liberaProjeto: e.liberaProjeto,
+            perfisQueAvancam: e.perfisQueAvancam,
           })),
         }),
       ]);
@@ -74,6 +76,15 @@ export async function garantirEtapasDosContratos(contratoIds: string[]) {
       // Outra requisição copiou as etapas ao mesmo tempo (chave única contrato+etapa) — tudo certo.
     }
   }
+}
+
+/**
+ * Quem pode concluir a etapa atual: se a etapa lista perfis, só eles; senão, quem gerencia contratos.
+ */
+export function podeAvancarEtapa(user: { perfilId: string; permissoes: readonly string[] }, etapa: { perfisQueAvancam: string }) {
+  if (!user.permissoes.includes("contrato.gerenciar")) return false;
+  const perfis = lerIds(etapa.perfisQueAvancam);
+  return perfis.length === 0 || perfis.includes(user.perfilId);
 }
 
 /** Cria o identificador interno de uma etapa a partir do nome ("Análise jurídica" → ANALISE_JURIDICA). */

@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { usuariosComPermissao } from "@/lib/usuarios-permissao";
 
 /**
  * Decisão 9.4 (padrão recomendado): quando um prazo vence sem ação, notifica automaticamente
@@ -35,8 +36,8 @@ export function inicioDoDiaUTC(agora = new Date()): Date {
 
 async function verificarPrazos() {
   const hoje = inicioDoDiaUTC();
-  const gestores = await prisma.user.findMany({ where: { perfilInterno: "GESTOR", ativo: true }, select: { id: true } });
-  const idsGestores = gestores.map((g) => g.id);
+  // "Gestores" = quem tem acesso a Cadastros no perfil (Cadastros › Perfis).
+  const idsGestores = await usuariosComPermissao("cadastros");
 
   const etapasVencidas = await prisma.etapaProjeto.findMany({
     where: { prazo: { lt: hoje }, status: { not: "CONCLUIDA" } },

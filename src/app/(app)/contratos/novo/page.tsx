@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { prisma } from "@/lib/prisma";
-import { requireInterno } from "@/lib/tenant";
+import { exigirPermissao } from "@/lib/tenant";
+import { pode } from "@/lib/permissoes";
 import { FLUXO_PADRAO_ID } from "@/lib/fluxo-contrato";
 import { BackLink, PageHeader } from "@/components/ui";
 import NovoContratoForm from "./NovoContratoForm";
@@ -8,7 +9,7 @@ import NovoContratoForm from "./NovoContratoForm";
 export const metadata: Metadata = { title: "Novo contrato" };
 
 export default async function NovoContratoPage() {
-  const user = await requireInterno();
+  const user = await exigirPermissao("contrato.gerenciar");
   const [municipios, usuarios, fluxos] = await Promise.all([
     prisma.municipio.findMany({ orderBy: { nome: "asc" }, select: { id: true, nome: true } }),
     prisma.user.findMany({ where: { tipo: "INTERNO", ativo: true }, orderBy: { nome: "asc" }, select: { id: true, nome: true } }),
@@ -31,7 +32,7 @@ export default async function NovoContratoPage() {
         fluxos={utilizaveis}
         responsavelPadrao={user.id}
         fluxoPadrao={utilizaveis.some((f) => f.id === FLUXO_PADRAO_ID) ? FLUXO_PADRAO_ID : utilizaveis[0]?.id ?? ""}
-        podeConfigurar={user.perfilInterno === "GESTOR"}
+        podeConfigurar={pode(user, "cadastros")}
       />
     </div>
   );

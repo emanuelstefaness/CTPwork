@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { Metadata } from "next";
 import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/tenant";
+import { filtroProjetosVisiveis } from "@/lib/visibilidade";
 import { STATUS_ETAPA_LABEL } from "@/lib/constants";
 import { Avatar, Badge, EmptyState, FilterPills, PageHeader, SearchBox } from "@/components/ui";
 import { BellAlertIcon, BuildingLibraryIcon, CalendarDaysIcon } from "@heroicons/react/24/outline";
@@ -19,7 +20,7 @@ export default async function ProjetosPage({ searchParams }: { searchParams: Pro
 
   const todos = await prisma.projeto.findMany({
     where: {
-      ...(isInterno ? {} : { contratanteId: user.municipioId ?? "__none__" }),
+      ...filtroProjetosVisiveis(user),
       ...(busca
         ? { OR: [{ codigo: { contains: busca } }, { contratante: { nome: { contains: busca } } }, { contratoOrigem: { objeto: { contains: busca } } }] }
         : {}),

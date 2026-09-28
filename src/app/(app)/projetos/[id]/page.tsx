@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { requireSession, assertAcessoContratante } from "@/lib/tenant";
+import { podeVerProjeto } from "@/lib/visibilidade";
 import { STATUS_ETAPA_LABEL } from "@/lib/constants";
 import { notFound } from "next/navigation";
 import EtapaPanel from "./EtapaPanel";
@@ -22,6 +23,7 @@ export default async function ProjetoDetailPage({ params, searchParams }: { para
   });
   if (!projeto) notFound();
   assertAcessoContratante(user, projeto.contratanteId);
+  if (!(await podeVerProjeto(user, projeto.id))) notFound();
   const etapaSelecionada = projeto.etapas.find((e) => e.id === etapaIdParam) ?? projeto.etapas.find((e) => e.status !== "CONCLUIDA") ?? projeto.etapas[0];
   const concluidaCount = projeto.etapas.filter((e) => e.status === "CONCLUIDA").length;
   const isInterno = user.tipo === "INTERNO";

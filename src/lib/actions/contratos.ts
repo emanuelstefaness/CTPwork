@@ -1,17 +1,17 @@
 "use server";
 
 import { prisma } from "@/lib/prisma";
-import { requireInterno, requireSession, assertAcessoContratante } from "@/lib/tenant";
+import { exigir, exigirPermissao, requireSession, assertAcessoContratante, AcessoNegadoError } from "@/lib/tenant";
 import { registrarAuditoria } from "@/lib/audit";
 import { gerarCodigoContrato, gerarCodigoProjeto } from "@/lib/codigos";
 import { getSignatureProvider } from "@/lib/signature/provider";
-import { FLUXO_PADRAO_ID, garantirEtapasDosContratos, progressoDoContrato } from "@/lib/fluxo-contrato";
+import { FLUXO_PADRAO_ID, garantirEtapasDosContratos, podeAvancarEtapa, progressoDoContrato } from "@/lib/fluxo-contrato";
 import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 
 export async function criarContrato(formData: FormData) {
-  const user = await requireInterno();
+  const user = await exigirPermissao("contrato.gerenciar");
 
   const objeto = String(formData.get("objeto") ?? "").trim();
   const contratanteId = String(formData.get("contratanteId") ?? "");
@@ -49,6 +49,7 @@ export async function criarContrato(formData: FormData) {
           curto: e.curto,
           exigeAssinaturas: e.exigeAssinaturas,
           liberaProjeto: e.liberaProjeto,
+          perfisQueAvancam: e.perfisQueAvancam,
         })),
       },
     },
@@ -75,9 +76,13 @@ async function contratoComEtapas(contratoId: string) {
  * só é deixada para trás com todas coletadas. Grava quem concluiu a etapa e quando.
  */
 export async function avancarEtapaContrato(contratoId: string) {
-  const user = await requireInterno();
+  const user = await exigirPermissao("contrato.gerenciar");
   const { contrato, atual, proxima } = await contratoComEtapas(contratoId);
   if (!proxima) throw new Error("O contrato já está na última etapa do fluxo.");
+  // A etapa pode estar restrita a alguns perfis (Cadastros › Fluxos de contrato).
+  if (!podeAvancarEtapa(user, atual)) {
+    throw new AcessoNegadoError(`Seu perfil (${user.perfilNome}) não pode concluir a etapa "${atual.nome}".`);
+  }
 
   if (atual.exigeAssinaturas && !contrato.fluxoAssinatura?.concluido) {
     throw new Error(`A etapa "${atual.nome}" exige todas as assinaturas antes de avançar.`);
@@ -98,7 +103,7 @@ export async function avancarEtapaContrato(contratoId: string) {
 }
 
 export async function criarFluxoAssinaturaContrato(contratoId: string, signatarios: { userId?: string; nomeExterno?: string; tipo: string }[]) {
-  const user = await requireInterno();
+  const user = await exigirPermissao("contrato.gerenciar");
   const { contrato, atual } = await contratoComEtapas(contratoId);
   if (!atual.exigeAssinaturas) throw new Error("A coleta de assinaturas é aberta na etapa do fluxo que exige assinaturas.");
   if (contrato.fluxoAssinatura) throw new Error("Este contrato já tem um fluxo de assinatura aberto.");
@@ -133,6 +138,8 @@ export async function assinarContrato(contratoId: string) {
   const user = await requireSession();
   const contrato = await prisma.contrato.findUniqueOrThrow({ where: { id: contratoId } });
   assertAcessoContratante(user, contrato.contratanteId);
+  // Pela prefeitura, só quem tem a permissão assina (ex.: o prefeito).
+  if (user.tipo === "EXTERNO") exigir(user, "contrato.assinar");
 
   const fluxo = await prisma.fluxoAssinatura.findUnique({
     where: { contratoId },
@@ -176,7 +183,7 @@ export async function assinarContrato(contratoId: string) {
  * Herança 9.6: contratante + vínculo ao contrato + anexos (por referência, sem duplicar arquivo).
  */
 export async function criarProjetoDoContrato(formData: FormData) {
-  const user = await requireInterno();
+  const user = await exigirPermissao("contrato.gerenciar");
   const contratoId = String(formData.get("contratoId"));
   const tipo = String(formData.get("tipo"));
   const dataVigencia = String(formData.get("dataVigencia"));

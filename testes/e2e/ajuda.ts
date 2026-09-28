@@ -44,6 +44,18 @@ export const erroDoFormulario = (page: Page) => page.locator("form [role=alert]"
  * solta o botão (o editor abre o menu de grifo/comentário/sugestão no mouseup).
  */
 export async function selecionarTrecho(page: Page, trecho: string) {
+  // Logo depois de abrir a página o editor pode ainda não ter ligado o "soltar do mouse": se o menu
+  // de seleção não aparecer, seleciona de novo (como a pessoa faria).
+  for (let tentativa = 0; tentativa < 5; tentativa++) {
+    await selecionarUmaVez(page, trecho);
+    if (await page.locator("[data-menu-selecao]").isVisible()) return;
+    await page.waitForTimeout(600);
+    if (await page.locator("[data-menu-selecao]").isVisible()) return;
+  }
+  await expect(page.locator("[data-menu-selecao]"), "menu de seleção deveria aparecer").toBeVisible();
+}
+
+async function selecionarUmaVez(page: Page, trecho: string) {
   const achou = await page.evaluate((alvo) => {
     const raiz = document.querySelector(".documento-conteudo");
     if (!raiz) return false;

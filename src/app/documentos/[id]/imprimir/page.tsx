@@ -3,6 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { sessaoValidaOuNula, assertAcessoContratante } from "@/lib/tenant";
 import { ImpressaoDocumento } from "@/components/editor/ImpressaoDocumento";
+import { podeVerProjeto } from "@/lib/visibilidade";
 import type { DecisaoSugestao, TipoAnotacao } from "@/lib/editor/extensoes";
 
 export const metadata: Metadata = { title: "Imprimir documento" };
@@ -22,6 +23,7 @@ export default async function ImprimirDocumentoPage({ params }: { params: Promis
   if (!documento || !documento.conteudo) notFound();
   assertAcessoContratante(user, documento.etapa.projeto.contratanteId);
   if (!documento.enviadoEm && user.tipo !== "INTERNO") notFound();
+  if (!(await podeVerProjeto(user, documento.etapa.projetoId))) notFound();
 
   return (
     <ImpressaoDocumento

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { prisma } from "@/lib/prisma";
 import { requireInterno } from "@/lib/tenant";
+import { pode } from "@/lib/permissoes";
 import { STATUS_MEMORANDO_LABEL } from "@/lib/constants";
 import { formatarDataHora, formatarRelativo } from "@/lib/formatters";
 import { Avatar, BackLink, Badge, DetailList, Panel } from "@/components/ui";
@@ -42,7 +43,7 @@ export default async function MemorandoDetailPage({ params }: { params: Promise<
     ? Object.fromEntries((JSON.parse(memorando.modelo.campos) as { chave: string; label?: string }[]).map((c) => [c.chave, c.label ?? c.chave]))
     : {};
   const podeExecutar = memorando.acUserId === user.id || memorando.setores.some((s) => s.setorId === user.setorId);
-  const podeCancelar = memorando.criadoPorId === user.id || user.perfilInterno === "GESTOR";
+  const podeCancelar = memorando.criadoPorId === user.id || pode(user, "memorando.gerenciar");
   const meuSignatario = memorando.fluxoAssinatura?.signatarios.find((s) => s.userId === user.id);
   const signatarios = memorando.fluxoAssinatura?.signatarios ?? [];
   const assinados = signatarios.filter((s) => s.status === "ASSINADO").length;

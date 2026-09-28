@@ -45,7 +45,10 @@ model User {
   email         String    @unique
   passwordHash  String
   tipo          String    // INTERNO | EXTERNO
-  perfilInterno String?   // COLABORADOR | GESTOR (só quando tipo = INTERNO)
+  perfilInterno String?   // legado (COLABORADOR | GESTOR) — o que vale é `perfil`; mantido para compatibilidade
+  // Perfil (cargo) com as permissões da pessoa — ver src/lib/permissoes.ts. Nulo = perfil padrão do tipo.
+  perfilId      String?
+  perfil        Perfil?   @relation(fields: [perfilId], references: [id])
   setorId       String?
   setor         Setor?    @relation(fields: [setorId], references: [id])
   municipioId   String?   // só quando tipo = EXTERNO
@@ -160,6 +163,25 @@ model Contrato {
   etapas          EtapaContrato[]
 }
 
+// ---------- Perfis (cargos) e permissões ----------
+// Criados pelo gestor em Cadastros › Perfis. `permissoes` é a lista (JSON) de chaves do catálogo em
+// src/lib/permissoes.ts; o catálogo fica no código porque cada permissão corresponde a uma função
+// do sistema. Uma prefeitura nunca vê outra, qualquer que seja o perfil (regra fixa).
+
+model Perfil {
+  id               String   @id @default(cuid())
+  nome             String   @unique
+  descricao        String?
+  tipo             String   // INTERNO (equipe do CTP) | EXTERNO (prefeitura)
+  permissoes       String   @default("[]")
+  somenteParticipa Boolean  @default(false) // CTP: vê só contratos e projetos em que participa
+  sistema          Boolean  @default(false) // perfis de fábrica: podem ser editados, não excluídos
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  usuarios User[]
+}
+
 // ---------- Fluxos de contrato configuráveis ----------
 // Tipos de contrato (ex.: "Dispensa de licitação", "Termo aditivo") com as etapas de cada um,
 // montados pelo gestor em Cadastros › Fluxos de contrato.
@@ -189,6 +211,8 @@ model EtapaFluxoContrato {
   curto            String
   exigeAssinaturas Boolean       @default(false)
   liberaProjeto    Boolean       @default(false)
+  // JSON com ids de perfis que podem concluir esta etapa; vazio = quem pode gerenciar contratos.
+  perfisQueAvancam String        @default("[]")
   createdAt        DateTime      @default(now())
 
   @@unique([fluxoId, chave])
@@ -206,6 +230,7 @@ model EtapaContrato {
   curto            String
   exigeAssinaturas Boolean   @default(false)
   liberaProjeto    Boolean   @default(false)
+  perfisQueAvancam String    @default("[]")
   concluidaEm      DateTime?
   concluidaPorId   String?
   concluidaPor     User?     @relation("EtapaContratoConcluidaPor", fields: [concluidaPorId], references: [id])

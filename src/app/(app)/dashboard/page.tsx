@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
-import { requireInterno } from "@/lib/tenant";
+import { exigirPermissao } from "@/lib/tenant";
 import { STATUS_ETAPA_LABEL } from "@/lib/constants";
 import { garantirEtapasDosContratos, progressoDoContrato } from "@/lib/fluxo-contrato";
 import { ENTIDADE_LABEL, formatarData, formatarRelativo } from "@/lib/formatters";
@@ -68,7 +68,7 @@ function Kpi({ title, value, detail, tone, icon: Icon }: { title: string; value:
 }
 
 export default async function DashboardPage() {
-  await requireInterno();
+  await exigirPermissao("painel");
 
   await garantirEtapasDosContratos((await prisma.contrato.findMany({ where: { etapas: { none: {} } }, select: { id: true } })).map((c) => c.id));
   const now = new Date();

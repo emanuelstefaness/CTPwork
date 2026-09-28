@@ -1,7 +1,8 @@
 "use server";
 
 import { prisma } from "@/lib/prisma";
-import { requireSession, requireGestor, assertAcessoContratante, AcessoNegadoError } from "@/lib/tenant";
+import { requireSession, exigir, exigirPermissao, assertAcessoContratante } from "@/lib/tenant";
+import { assertVeProjeto } from "@/lib/visibilidade";
 import { registrarAuditoria } from "@/lib/audit";
 import { salvarAnexo } from "@/lib/storage";
 import { revalidatePath } from "next/cache";
@@ -18,13 +19,14 @@ async function assertAcessoEtapa(etapaId: string) {
   const user = await requireSession();
   const etapa = await getEtapaComProjeto(etapaId);
   assertAcessoContratante(user, etapa.projeto.contratanteId);
+  await assertVeProjeto(user, etapa.projetoId);
   return { user, etapa };
 }
 
 /** Máquina 6.3, regra obrigatória 10.2: notifica automaticamente ao entrar em Aguardando município / ao ele responder. */
 export async function avancarStatusEtapa(etapaId: string, novoStatus: string) {
   const { user, etapa } = await assertAcessoEtapa(etapaId);
-  if (user.tipo !== "INTERNO") throw new AcessoNegadoError("Apenas CTP altera o status da etapa.");
+  exigir(user, "projeto.gerenciar");
   if (!["NAO_INICIADA", "EM_ANDAMENTO", "AGUARDANDO_MUNICIPIO", "CONCLUIDA"].includes(novoStatus)) throw new Error("Status inválido.");
   // Etapa com documento só conclui por concluirEtapaComRevisao (que exige o parecer do município).
   if (novoStatus === "CONCLUIDA" && etapa.temRevisao) throw new Error('Use "Concluir revisão" para encerrar uma etapa com documento.');
@@ -68,7 +70,7 @@ async function notificarRespostaMunicipio(etapaId: string, mensagem: string) {
 export async function responderFormularioEtapa(formData: FormData) {
   const etapaId = String(formData.get("etapaId"));
   const { user, etapa } = await assertAcessoEtapa(etapaId);
-  if (user.tipo !== "EXTERNO") throw new AcessoNegadoError("Só o usuário do município responde este formulário.");
+  exigir(user, "etapa.enviar");
 
   const modelo = await prisma.modeloFormulario.findFirst({ where: { tipo: "CONTRATO" } });
   const respostas: Record<string, string> = {};
@@ -96,7 +98,7 @@ export async function responderFormularioEtapa(formData: FormData) {
 export async function definirPrazoEtapa(formData: FormData) {
   const etapaId = String(formData.get("etapaId"));
   const { user, etapa } = await assertAcessoEtapa(etapaId);
-  if (user.tipo !== "INTERNO") throw new AcessoNegadoError("Apenas CTP define prazos.");
+  exigir(user, "projeto.gerenciar");
 
   const prazoRaw = String(formData.get("prazo") ?? "");
   await prisma.etapaProjeto.update({
@@ -109,7 +111,7 @@ export async function definirPrazoEtapa(formData: FormData) {
 export async function criarItemChecklist(formData: FormData) {
   const etapaId = String(formData.get("etapaId"));
   const { user, etapa } = await assertAcessoEtapa(etapaId);
-  if (user.tipo !== "INTERNO") throw new AcessoNegadoError("Apenas CTP cria itens de checklist.");
+  exigir(user, "projeto.gerenciar");
 
   const nome = String(formData.get("nome") ?? "").trim();
   if (!nome) throw new Error("Nome do item é obrigatório.");
@@ -122,7 +124,7 @@ export async function enviarArquivoChecklist(formData: FormData) {
   const itemId = String(formData.get("itemId"));
   const item = await prisma.checklistItem.findUniqueOrThrow({ where: { id: itemId } });
   const { user, etapa } = await assertAcessoEtapa(item.etapaId);
-  if (user.tipo !== "EXTERNO") throw new AcessoNegadoError("Só o município envia documentos do checklist.");
+  exigir(user, "etapa.enviar");
 
   const file = formData.get("arquivo") as File | null;
   if (!file || file.size === 0) throw new Error("Selecione um arquivo.");
@@ -138,7 +140,7 @@ export async function enviarArquivoChecklist(formData: FormData) {
 export async function aprovarItemChecklist(itemId: string) {
   const item = await prisma.checklistItem.findUniqueOrThrow({ where: { id: itemId } });
   const { user, etapa } = await assertAcessoEtapa(item.etapaId);
-  if (user.tipo !== "INTERNO") throw new AcessoNegadoError("Apenas CTP aprova itens de checklist.");
+  exigir(user, "projeto.gerenciar");
 
   await prisma.checklistItem.update({ where: { id: itemId }, data: { status: "APROVADO" } });
   await registrarAuditoria({ userId: user.id, acao: "APROVAR_CHECKLIST", entidadeTipo: "ChecklistItem", entidadeId: itemId });
@@ -148,7 +150,7 @@ export async function aprovarItemChecklist(itemId: string) {
 /** Regra 10.3: bloqueia conclusão da etapa de minuta enquanto houver unidade Pendente. */
 export async function concluirEtapaComRevisao(etapaId: string) {
   const { user, etapa } = await assertAcessoEtapa(etapaId);
-  if (user.tipo !== "INTERNO") throw new AcessoNegadoError("Apenas CTP conclui a etapa.");
+  exigir(user, "projeto.gerenciar");
 
   // Só a versão mais recente enviada conta: versões antigas substituídas não bloqueiam.
   const ultimaEnviada = await prisma.documentoVersionado.findFirst({
@@ -220,7 +222,7 @@ export async function enviarMensagemChat(formData: FormData) {
 
 /** 9.5: reabertura apenas por Gestor, com auditoria de motivo. */
 export async function reabrirEtapa(formData: FormData) {
-  const user = await requireGestor();
+  const user = await exigirPermissao("projeto.reabrir");
   const etapaId = String(formData.get("etapaId"));
   const motivo = String(formData.get("motivo") ?? "").trim();
   if (!motivo) throw new Error("Informe o motivo da reabertura.");

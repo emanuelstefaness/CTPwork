@@ -7,6 +7,7 @@ import { requireSession, assertAcessoContratante, type SessaoAtual } from "@/lib
 import { capturar, ErroUsuario, type Resultado } from "@/lib/resultado";
 import { registrarAuditoria } from "@/lib/audit";
 import { salvarAnexo } from "@/lib/storage";
+import { usuariosComPermissao } from "@/lib/usuarios-permissao";
 
 /**
  * Conversas com o município que não pertencem a uma etapa de projeto (o chat da etapa continua
@@ -67,8 +68,7 @@ async function destinatarios(conversa: { id: string; municipioId: string; contra
   const doMunicipio = await prisma.contrato.findMany({ where: { contratanteId: conversa.municipioId }, select: { responsavelId: true }, distinct: ["responsavelId"] });
   if (doMunicipio.length) return doMunicipio.map((c) => c.responsavelId);
 
-  const gestores = await prisma.user.findMany({ where: { tipo: "INTERNO", perfilInterno: "GESTOR", ativo: true }, select: { id: true } });
-  return gestores.map((u) => u.id);
+  return usuariosComPermissao("cadastros");
 }
 
 /** Avisa o outro lado — sem empilhar: quem ainda tem um aviso não lido desta conversa não ganha outro. */

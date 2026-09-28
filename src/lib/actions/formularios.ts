@@ -9,7 +9,7 @@ import {
 } from "./etapas";
 import { criarEventoCronograma, removerEventoCronograma } from "./cronograma";
 import {
-  alterarAcessoUsuario, alternarFluxoContrato, atualizarEtapaFluxoContrato, atualizarFluxoContrato, criarEtapaFluxoContrato,
+  alterarAcessoUsuario, alternarFluxoContrato, atualizarPerfil, criarPerfil, excluirPerfil, atualizarEtapaFluxoContrato, atualizarFluxoContrato, criarEtapaFluxoContrato,
   criarFluxoContrato, moverEtapaFluxoContrato, removerEtapaFluxoContrato, atualizarEtapaModelo, atualizarModeloFormulario, atualizarMunicipio, atualizarUsuario, criarEtapaModelo,
   criarModeloFormulario, criarMunicipio, criarSetor, criarTipoProjeto, criarUsuario, renomearSetor, renomearTipoProjeto,
 } from "./cadastros";
@@ -162,6 +162,20 @@ export async function criarTipoProjetoSeguro(formData: FormData): R {
 
 export async function renomearTipoProjetoSeguro(formData: FormData): R {
   return capturar(() => renomearTipoProjeto(formData));
+}
+
+/* ── Perfis ── */
+
+export async function criarPerfilSeguro(formData: FormData): R {
+  return capturar(() => criarPerfil(formData));
+}
+
+export async function atualizarPerfilSeguro(formData: FormData): R {
+  return capturar(() => atualizarPerfil(formData));
+}
+
+export async function excluirPerfilSeguro(formData: FormData): R {
+  return capturar(() => excluirPerfil(campo(formData, "perfilId")));
 }
 
 /* ── Fluxos de contrato ── */

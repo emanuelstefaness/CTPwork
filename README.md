@@ -129,6 +129,28 @@ existindo para o assunto da etapa.
   no próximo clique; sai das listas de escolha e dos avisos, mas o histórico (comentários,
   assinaturas, mensagens, auditoria) fica. Reativável. Ninguém desativa a si mesmo nem o último gestor.
 
+## Perfis e permissões
+
+Em **Cadastros › Perfis e permissões** o gestor cria perfis (cargos) — ex.: Jurídico, Financeiro,
+Prefeito, Secretário — e marca o que cada um pode fazer. Cada usuário tem um perfil (escolhido no
+cadastro). O catálogo fica em `src/lib/permissoes.ts`:
+
+| Para | Permissão |
+| --- | --- |
+| CTP | Ver o dashboard · Gerenciar contratos · Gerenciar etapas de projeto · Reabrir etapas · Escrever minutas · Cancelar memorandos de outras pessoas · Acessar Cadastros |
+| Prefeitura | Revisar minutas (grifar/comentar/sugerir) · Dar o parecer da minuta · Assinar contratos pelo município · Enviar documentos e formulários |
+
+- **"Vê só os contratos e projetos em que participa"** (perfis do CTP): onde a pessoa é responsável,
+  responsável por alguma etapa ou signatária — vale para listas, detalhes, prazos, Word/PDF e anexos
+  (`src/lib/visibilidade.ts`).
+- Nas **etapas de contrato**, dá para restringir quais perfis podem concluí-la.
+- Perfis de fábrica (Gestor, Colaborador, Município) reproduzem o comportamento anterior; podem ser
+  editados, não excluídos. Mudanças valem no próximo clique (a sessão lê o perfil do banco a cada request).
+- Regras fixas: a prefeitura só vê o próprio município; o sistema nunca fica sem alguém com acesso
+  a Cadastros (a trava vale ao editar perfil, trocar o perfil de alguém ou desativar usuário).
+- Avisos que iam "para os gestores" (prazo vencido, conversa sem responsável) vão para quem tem
+  acesso a Cadastros.
+
 ## Fluxos de contrato (tipos de contrato)
 
 Em **Cadastros › Fluxos de contrato** o gestor cria tipos de contrato (ex.: Padrão, Dispensa de

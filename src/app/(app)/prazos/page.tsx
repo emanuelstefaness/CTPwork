@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { requireInterno } from "@/lib/tenant";
+import { filtroProjetosVisiveis } from "@/lib/visibilidade";
 import { formatarData } from "@/lib/formatters";
 import { Badge, PageHeader } from "@/components/ui";
 import { CheckCircleIcon, ClockIcon, ExclamationTriangleIcon, FunnelIcon } from "@heroicons/react/24/outline";
@@ -26,13 +27,14 @@ export default async function PrazosPage({
 }: {
   searchParams: Promise<{ responsavel?: string; contratante?: string; urgencia?: string }>;
 }) {
-  await requireInterno();
+  const user = await requireInterno();
   const { responsavel, contratante, urgencia } = await searchParams;
 
   const [projetos, etapas, usuarios, municipios] = await Promise.all([
     prisma.projeto.findMany({
       include: { contratante: true, responsavel: true },
       where: {
+        ...filtroProjetosVisiveis(user),
         ...(responsavel ? { responsavelId: responsavel } : {}),
         ...(contratante ? { contratanteId: contratante } : {}),
       },
@@ -41,6 +43,7 @@ export default async function PrazosPage({
       where: {
         prazo: { not: null },
         status: { not: "CONCLUIDA" },
+        projeto: filtroProjetosVisiveis(user),
         ...(responsavel ? { responsavelId: responsavel } : {}),
       },
       include: { responsavel: true, projeto: { include: { contratante: true } } },

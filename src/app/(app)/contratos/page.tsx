@@ -2,6 +2,8 @@ import Link from "next/link";
 import type { Metadata } from "next";
 import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/tenant";
+import { pode } from "@/lib/permissoes";
+import { filtroContratosVisiveis } from "@/lib/visibilidade";
 import { garantirEtapasDosContratos, progressoDoContrato, SITUACAO_CONTRATO } from "@/lib/fluxo-contrato";
 import { formatarRelativo } from "@/lib/formatters";
 import { Avatar, Badge, EmptyState, FilterPills, PageHeader, SearchBox } from "@/components/ui";
@@ -21,7 +23,7 @@ export default async function ContratosPage({
   const { situacao, tipo, q } = await searchParams;
   const busca = q?.trim() ?? "";
   const situacaoAtiva = situacao && situacao in SITUACAO_CONTRATO ? (situacao as Situacao) : undefined;
-  const escopo = isInterno ? {} : { contratanteId: user.municipioId ?? "__none__" };
+  const escopo = filtroContratosVisiveis(user);
 
   // Cada contrato segue o fluxo do seu tipo, então a situação (andamento / assinatura / concluído)
   // é calculada a partir das etapas dele, não de uma lista fixa.
@@ -66,7 +68,7 @@ export default async function ContratosPage({
         eyebrow={isInterno ? "Jurídico e administrativo" : "Portal do município"}
         title={isInterno ? "Contratos" : "Meus contratos"}
         description={isInterno ? "Do pedido de orçamento à assinatura e criação do projeto técnico." : "Acompanhe cada contrato com o CTP, do orçamento à assinatura."}
-        actions={isInterno ? <Link href="/contratos/novo" className="primary-button"><PlusIcon className="h-4 w-4" />Novo contrato</Link> : undefined}
+        actions={pode(user, "contrato.gerenciar") ? <Link href="/contratos/novo" className="primary-button"><PlusIcon className="h-4 w-4" />Novo contrato</Link> : undefined}
       />
 
       <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">

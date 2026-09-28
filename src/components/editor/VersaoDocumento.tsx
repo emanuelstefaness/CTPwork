@@ -18,7 +18,7 @@ import { formatarDataHora } from "@/lib/formatters";
 import { Anotacoes, definirAnotacoes, posicoesAtuais, type AncoraVisual } from "./anotacoes-extension";
 import { BarraFerramentas } from "./BarraFerramentas";
 import { PainelAnotacoes, pedeAcao } from "./PainelAnotacoes";
-import type { AnotacaoView, VersaoView } from "./tipos";
+import type { AnotacaoView, UsuarioEditor, VersaoView } from "./tipos";
 
 type Selecao = { de: number; ate: number; trecho: string; x: number; y: number };
 type Compositor = { tipo: TipoAnotacao; de: number; ate: number; trecho: string };
@@ -77,7 +77,7 @@ export function VersaoDocumento({
   /** Apontamentos da versão enviada anterior — o que o CTP precisa endereçar neste rascunho. */
   anteriores: AnotacaoView[];
   versaoAnterior: number | null;
-  usuario: { id: string; nome: string; tipo: string };
+  usuario: UsuarioEditor;
   tipoLabel: string;
   /** CTP numa versão enviada: abre (ou cria) o rascunho da próxima versão para aplicar sugestões. */
   onIrParaRascunho?: () => void;
@@ -86,9 +86,13 @@ export function VersaoDocumento({
 }) {
   const isInterno = usuario.tipo === "INTERNO";
   const rascunho = !versao.enviadoEm;
-  const editavel = isInterno && rascunho;
+  // Permissões do perfil: escrever (CTP), revisar e dar o parecer (prefeitura).
+  const escreve = usuario.permissoes.includes("minuta.escrever");
+  const revisa = usuario.permissoes.includes("minuta.revisar");
+  const daParecer = usuario.permissoes.includes("minuta.parecer");
+  const editavel = isInterno && rascunho && escreve;
   const precisaLer = !isInterno && !rascunho && !versao.lidaPorMim;
-  const podeAnotar = rascunho ? isInterno : ehUltimaEnviada && (isInterno || versao.lidaPorMim);
+  const podeAnotar = rascunho ? editavel : ehUltimaEnviada && (isInterno || (versao.lidaPorMim && revisa));
   const tiposPermitidos: TipoAnotacao[] = rascunho ? ["COMENTARIO"] : isInterno ? ["GRIFO", "COMENTARIO"] : ["GRIFO", "COMENTARIO", "SUGESTAO", "CONCORDO", "DISCORDO"];
   const avaliacaoPendente = versao.avaliacao?.status === "PENDENTE";
 
@@ -582,7 +586,7 @@ export function VersaoDocumento({
           <section className={`mb-5 rounded-xl border p-3.5 ${versao.avaliacao.status === "APROVADO" ? "border-emerald-200 bg-emerald-50/60" : versao.avaliacao.status === "REPROVADO" ? "border-red-200 bg-red-50/50" : "border-slate-200 bg-slate-50"}`}>
             <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Avaliação desta versão</p>
             {avaliacaoPendente ? (
-              !isInterno && ehUltimaEnviada && versao.lidaPorMim ? (
+              !isInterno && daParecer && ehUltimaEnviada && versao.lidaPorMim ? (
                 decisao ? (
                   <div className="mt-2">
                     <p className="text-sm font-semibold text-slate-800">{decisao === "APROVADO" ? "Aprovar a versão inteira" : "Solicitar ajustes ao CTP"}</p>
@@ -651,7 +655,7 @@ export function VersaoDocumento({
             anotacoes={versao.anotacoes}
             usuario={usuario}
             ativaId={ativaId}
-            podeResponder={isInterno || versao.lidaPorMim}
+            podeResponder={isInterno || (versao.lidaPorMim && revisa)}
             onAtivar={ativar}
             onErro={mostrar}
             vazio={rascunho ? "Nenhuma nota ainda." : "Nenhum grifo ou comentário nesta versão."}

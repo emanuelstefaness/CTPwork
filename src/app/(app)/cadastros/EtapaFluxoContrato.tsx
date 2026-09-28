@@ -8,10 +8,21 @@ import {
   atualizarEtapaFluxoContratoSeguro, criarEtapaFluxoContratoSeguro, moverEtapaFluxoContratoSeguro, removerEtapaFluxoContratoSeguro,
 } from "@/lib/actions/formularios";
 
-type Etapa = { id: string; nome: string; curto: string; exigeAssinaturas: boolean; liberaProjeto: boolean };
+type Etapa = { id: string; nome: string; curto: string; exigeAssinaturas: boolean; liberaProjeto: boolean; perfisQueAvancam: string };
+type PerfilOpcao = { id: string; nome: string };
+
+const idsDe = (json: string) => {
+  try {
+    const v = JSON.parse(json);
+    return Array.isArray(v) ? (v as string[]) : [];
+  } catch {
+    return [];
+  }
+};
 
 /** Campos de uma etapa (nome, rótulo curto e o que ela exige/libera) — usados ao criar e ao editar. */
-function CamposEtapa({ etapa }: { etapa?: Etapa }) {
+function CamposEtapa({ etapa, perfis }: { etapa?: Etapa; perfis: PerfilOpcao[] }) {
+  const marcados = etapa ? idsDe(etapa.perfisQueAvancam) : [];
   return (
     <>
       <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_180px]">
@@ -34,11 +45,24 @@ function CamposEtapa({ etapa }: { etapa?: Etapa }) {
           <span><span className="flex items-center gap-1 font-semibold text-slate-700"><RocketLaunchIcon className="h-4 w-4 text-emerald-600" />Libera o projeto</span>Nesta etapa já dá para criar o projeto técnico.</span>
         </label>
       </div>
+      <fieldset className="rounded-lg border border-slate-200 bg-white px-3 py-2">
+        <legend className="px-1 text-xs font-semibold text-slate-700">Quem pode concluir esta etapa</legend>
+        <p className="text-[11px] text-slate-500">Nenhum marcado = qualquer perfil que gerencia contratos.</p>
+        <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1">
+          {perfis.map((p) => (
+            <label key={p.id} className="flex items-center gap-1.5 text-xs text-slate-700">
+              <input type="checkbox" name="perfisQueAvancam" value={p.id} defaultChecked={marcados.includes(p.id)} className="h-3.5 w-3.5" />
+              {p.nome}
+            </label>
+          ))}
+        </div>
+      </fieldset>
     </>
   );
 }
 
-export function EtapaFluxoContratoRow({ etapa, posicao, total }: { etapa: Etapa; posicao: number; total: number }) {
+export function EtapaFluxoContratoRow({ etapa, posicao, total, perfis }: { etapa: Etapa; posicao: number; total: number; perfis: PerfilOpcao[] }) {
+  const restritos = idsDe(etapa.perfisQueAvancam).map((id) => perfis.find((p) => p.id === id)?.nome).filter(Boolean);
   const [editando, setEditando] = useState(false);
   const [pendente, iniciar] = useTransition();
   const [erro, setErro] = useState<string | null>(null);
@@ -57,7 +81,7 @@ export function EtapaFluxoContratoRow({ etapa, posicao, total }: { etapa: Etapa;
     return (
       <form onSubmit={onSubmit} className="flex flex-col gap-3 rounded-xl border border-cyan-200 bg-cyan-50/40 p-4">
         <input type="hidden" name="etapaId" value={etapa.id} />
-        <CamposEtapa etapa={etapa} />
+        <CamposEtapa etapa={etapa} perfis={perfis} />
         {erroEdicao && <p className="text-xs text-red-600" role="alert">{erroEdicao}</p>}
         <div className="flex gap-2">
           <button type="submit" disabled={salvando} className="primary-button min-h-8 px-3 py-1.5 text-xs"><CheckIcon className="h-3.5 w-3.5" />{salvando ? "Salvando…" : "Salvar"}</button>
@@ -78,6 +102,7 @@ export function EtapaFluxoContratoRow({ etapa, posicao, total }: { etapa: Etapa;
         <div className="flex flex-wrap gap-1.5">
           {etapa.exigeAssinaturas && <Badge tone="amber">Exige assinaturas</Badge>}
           {etapa.liberaProjeto && <Badge tone="emerald">Libera o projeto</Badge>}
+          {restritos.length > 0 && <Badge tone="violet">Só: {restritos.join(", ")}</Badge>}
         </div>
         <div className="ml-auto flex shrink-0 items-center gap-1">
           <button type="button" aria-label="Mover para cima" disabled={posicao === 0 || pendente} onClick={() => rodar(moverEtapaFluxoContratoSeguro, { direcao: "up" })} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 disabled:opacity-30"><ChevronUpIcon className="h-4 w-4" /></button>
@@ -96,13 +121,13 @@ export function EtapaFluxoContratoRow({ etapa, posicao, total }: { etapa: Etapa;
   );
 }
 
-export function NovaEtapaFluxoContrato({ fluxoId }: { fluxoId: string }) {
+export function NovaEtapaFluxoContrato({ fluxoId, perfis }: { fluxoId: string; perfis: PerfilOpcao[] }) {
   const { onSubmit, pendente, erro } = useEnvio(criarEtapaFluxoContratoSeguro);
   return (
     <form onSubmit={onSubmit} className="flex flex-col gap-3 rounded-xl border border-dashed border-cyan-300 bg-cyan-50/40 p-4">
       <input type="hidden" name="fluxoId" value={fluxoId} />
       <p className="text-xs font-semibold text-slate-700">Adicionar etapa ao final</p>
-      <CamposEtapa />
+      <CamposEtapa perfis={perfis} />
       {erro && <p className="text-xs text-red-600" role="alert">{erro}</p>}
       <button type="submit" disabled={pendente} className="primary-button self-start"><PlusIcon className="h-4 w-4" />{pendente ? "Adicionando…" : "Adicionar etapa"}</button>
     </form>

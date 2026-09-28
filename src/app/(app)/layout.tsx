@@ -2,13 +2,15 @@ import { signOut } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { sessaoValidaOuNula } from "@/lib/tenant";
+import { pode } from "@/lib/permissoes";
 import { AppShell } from "@/components/app-shell";
 import { PortalShell } from "@/components/portal-shell";
 import { gerarNotificacoesPrazoEstourado } from "@/lib/prazos";
 import { contarConversasNaoLidas } from "@/lib/conversas";
 
-const internalNav = (conversasNaoLidas: number) => [
-  { href: "/dashboard", label: "Dashboard", icon: "dashboard" as const },
+// Menu conforme o perfil (Cadastros › Perfis): Dashboard e Cadastros só para quem tem a permissão.
+const internalNav = (conversasNaoLidas: number, painel: boolean) => [
+  ...(painel ? [{ href: "/dashboard", label: "Dashboard", icon: "dashboard" as const }] : []),
   { href: "/memorandos", label: "Memorandos", icon: "memorandos" as const },
   { href: "/contratos", label: "Contratos", icon: "contratos" as const },
   { href: "/projetos", label: "Projetos", icon: "projetos" as const },
@@ -32,7 +34,6 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   if (!session) redirect("/api/sair-sessao-invalida");
 
   const isInterno = session.tipo === "INTERNO";
-  const isGestor = session.perfilInterno === "GESTOR";
 
   if (isInterno) await gerarNotificacoesPrazoEstourado();
 
@@ -49,12 +50,13 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     );
   }
 
-  const navItems = isGestor
-    ? [...internalNav(conversasNaoLidas), { href: "/cadastros", label: "Cadastros", icon: "cadastros" as const }]
-    : internalNav(conversasNaoLidas);
+  const navItems = [
+    ...internalNav(conversasNaoLidas, pode(session, "painel")),
+    ...(pode(session, "cadastros") ? [{ href: "/cadastros", label: "Cadastros", icon: "cadastros" as const }] : []),
+  ];
 
   return (
-    <AppShell navItems={navItems} userName={session.name ?? "Usuário"} isGestor={isGestor} notificacoesNaoLidas={notificacoesNaoLidas} conversasNaoLidas={conversasNaoLidas} onSignOut={fazerLogout}>
+    <AppShell navItems={navItems} userName={session.name ?? "Usuário"} perfilNome={session.perfilNome} inicio={pode(session, "painel") ? "/dashboard" : "/projetos"} notificacoesNaoLidas={notificacoesNaoLidas} conversasNaoLidas={conversasNaoLidas} onSignOut={fazerLogout}>
       {children}
     </AppShell>
   );

@@ -3,7 +3,9 @@
 import mammoth from "mammoth";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
-import { requireSession, assertAcessoContratante, AcessoNegadoError } from "@/lib/tenant";
+import { requireSession, assertAcessoContratante, AcessoNegadoError, exigir, type SessaoAtual } from "@/lib/tenant";
+import { pode } from "@/lib/permissoes";
+import { assertVeProjeto } from "@/lib/visibilidade";
 import { capturar, ErroUsuario, type Resultado } from "@/lib/resultado";
 import { registrarAuditoria } from "@/lib/audit";
 import { lerDocumento, normalizarConteudo } from "@/lib/editor/servidor";
@@ -33,13 +35,15 @@ async function carregarDocumento(documentoId: string) {
   });
   if (!documento) throw new ErroUsuario("Documento não encontrado.");
   assertAcessoContratante(user, documento.etapa.projeto.contratanteId);
+  await assertVeProjeto(user, documento.etapa.projetoId);
   // Rascunho é interno: o município nunca enxerga uma versão que o CTP ainda não enviou.
   if (!documento.enviadoEm && user.tipo !== "INTERNO") throw new AcessoNegadoError("Documento não disponível.");
   return { user, documento, etapa: documento.etapa };
 }
 
-function exigirInterno(user: { tipo: string }, msg = "Apenas a equipe do CTP pode editar o documento.") {
-  if (user.tipo !== "INTERNO") throw new AcessoNegadoError(msg);
+/** Escrever/enviar minutas e decidir sobre sugestões: permissão "Escrever minutas" do perfil. */
+function exigirInterno(user: SessaoAtual, msg?: string) {
+  if (!pode(user, "minuta.escrever")) throw new AcessoNegadoError(msg ?? `Seu perfil (${user.perfilNome}) não permite escrever minutas.`);
 }
 
 async function usuariosDoMunicipio(municipioId: string) {
@@ -223,6 +227,7 @@ export async function criarAnotacao(input: {
     }
 
     if (user.tipo === "EXTERNO") {
+      exigir(user, "minuta.revisar");
       const ultimaEnviada = await prisma.documentoVersionado.findFirst({ where: { etapaId: etapa.id, enviadoEm: { not: null } }, orderBy: { versao: "desc" } });
       if (ultimaEnviada?.id !== documento.id) throw new ErroUsuario("Só é possível anotar a versão mais recente do documento.");
       const leu = await prisma.visualizacaoDocumento.findUnique({ where: { documentoId_userId: { documentoId: documento.id, userId: user.id } } });
@@ -292,6 +297,7 @@ export async function responderAnotacao(anotacaoId: string, texto: string): Prom
     if (!anotacao) throw new ErroUsuario("Anotação não encontrada.");
     const { user, documento, etapa } = await carregarDocumento(anotacao.documentoId);
     if (user.tipo === "EXTERNO") {
+      exigir(user, "minuta.revisar");
       const leu = await prisma.visualizacaoDocumento.findUnique({ where: { documentoId_userId: { documentoId: documento.id, userId: user.id } } });
       if (!leu) throw new ErroUsuario("Confirme a leitura do documento antes de responder.");
     }
@@ -433,6 +439,7 @@ export async function avaliarVersao(documentoId: string, decisao: "APROVADO" | "
   return executar(async () => {
     const { user, documento, etapa } = await carregarDocumento(documentoId);
     if (user.tipo !== "EXTERNO") throw new ErroUsuario("A avaliação da versão é feita pelo município.");
+    exigir(user, "minuta.parecer");
     if (decisao !== "APROVADO" && decisao !== "REPROVADO") throw new ErroUsuario("Decisão inválida.");
     const limpo = comentario.trim();
     if (decisao === "REPROVADO" && !limpo) throw new ErroUsuario("Descreva quais ajustes são necessários.");

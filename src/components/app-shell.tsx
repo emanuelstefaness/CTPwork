@@ -18,7 +18,8 @@ type NavItem = { href: string; label: string; icon: NavIcon; badge?: number };
 export function AppShell({
   navItems,
   userName,
-  isGestor,
+  perfilNome,
+  inicio,
   notificacoesNaoLidas,
   conversasNaoLidas,
   onSignOut,
@@ -26,7 +27,9 @@ export function AppShell({
 }: {
   navItems: NavItem[];
   userName: string;
-  isGestor: boolean;
+  perfilNome: string;
+  /** Destino do logotipo: dashboard, se o perfil tiver, ou projetos. */
+  inicio: string;
   notificacoesNaoLidas: number;
   conversasNaoLidas: number;
   onSignOut: () => Promise<void>;
@@ -51,7 +54,7 @@ export function AppShell({
         }`}
       >
         <div className="flex items-center justify-between border-b border-white/10 px-5 py-5">
-          <Link href="/dashboard" className="flex items-center gap-3" onClick={() => setOpen(false)}>
+          <Link href={inicio} className="flex items-center gap-3" onClick={() => setOpen(false)}>
             <span className="grid h-11 w-11 place-items-center rounded-2xl bg-cyan-400 text-xs font-extrabold text-[#082843] shadow-lg shadow-cyan-950/20">
               CTP
             </span>
@@ -103,7 +106,7 @@ export function AppShell({
           >
             <Bars3Icon className="h-5 w-5" />
           </button>
-          <Link href="/dashboard" className="hidden items-center gap-2 font-bold text-slate-950 sm:flex">
+          <Link href={inicio} className="hidden items-center gap-2 font-bold text-slate-950 sm:flex">
             <span className="grid h-8 w-8 place-items-center rounded-lg bg-cyan-500 text-white text-xs font-bold">CTP</span>
             <span>Work</span>
           </Link>
@@ -129,7 +132,7 @@ export function AppShell({
               <span className="grid h-9 w-9 place-items-center rounded-full bg-[#0c3763] text-xs font-bold text-white">{initials}</span>
               <span className="hidden pr-1 xl:block">
                 <span className="block text-xs font-semibold text-slate-800">{userName}</span>
-                <span className="block text-[10px] text-slate-400">{isGestor ? "Gestor CTP" : "Equipe técnica"}</span>
+                <span className="block text-[10px] text-slate-400">{perfilNome}</span>
               </span>
             </Link>
           </div>

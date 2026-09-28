@@ -64,7 +64,7 @@ function CartaoAnotacao({
   sugestoes,
 }: {
   a: AnotacaoView;
-  usuario: { id: string; tipo: string };
+  usuario: { id: string; tipo: string; permissoes?: readonly string[] };
   ativa: boolean;
   podeResponder: boolean;
   onAtivar: () => void;
@@ -80,7 +80,7 @@ function CartaoAnotacao({
   const ehSugestao = a.tipo === "SUGESTAO";
   const isInterno = usuario.tipo === "INTERNO";
   const podeResolver = pedeAcao(a) && !ehSugestao && (isInterno || a.autor.id === usuario.id);
-  const decideSugestao = ehSugestao && isInterno && !a.decisao;
+  const decideSugestao = ehSugestao && isInterno && !a.decisao && !!usuario.permissoes?.includes("minuta.escrever");
   const podeExcluir = a.autor.id === usuario.id && a.respostas.length === 0 && !a.resolvido;
   const orfa = a.ate <= a.de;
 
@@ -238,7 +238,7 @@ function CartaoAnotacao({
               {a.resolvido ? <><ArrowPathIcon className="h-3 w-3" /> Reabrir</> : <><CheckCircleIcon className="h-3.5 w-3.5" /> Resolver</>}
             </button>
           )}
-          {ehSugestao && isInterno && a.decisao && (
+          {ehSugestao && isInterno && a.decisao && usuario.permissoes?.includes("minuta.escrever") && (
             <button
               type="button"
               title="Volta a sugestão para “aguardando decisão”. Se ela já foi aplicada no rascunho, desfaça o texto manualmente."
@@ -273,7 +273,7 @@ export function PainelAnotacoes({
   onAceitarTodas,
 }: {
   anotacoes: AnotacaoView[];
-  usuario: { id: string; tipo: string };
+  usuario: { id: string; tipo: string; permissoes?: readonly string[] };
   ativaId: string | null;
   podeResponder: boolean;
   onAtivar: (id: string) => void;

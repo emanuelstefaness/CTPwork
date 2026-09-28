@@ -1,15 +1,16 @@
 "use server";
 
 import { prisma } from "@/lib/prisma";
-import { requireInterno, assertAcessoContratante } from "@/lib/tenant";
+import { exigirPermissao } from "@/lib/tenant";
+import { assertVeProjeto } from "@/lib/visibilidade";
 import { revalidatePath } from "next/cache";
 
 /** Componente de calendário real (7.6): eventos com data, título, responsável, descrição. */
 export async function criarEventoCronograma(formData: FormData) {
-  const user = await requireInterno();
+  const user = await exigirPermissao("projeto.gerenciar");
   const projetoId = String(formData.get("projetoId"));
   const projeto = await prisma.projeto.findUniqueOrThrow({ where: { id: projetoId } });
-  assertAcessoContratante(user, projeto.contratanteId);
+  await assertVeProjeto(user, projeto.id);
 
   const data = String(formData.get("data") ?? "");
   const titulo = String(formData.get("titulo") ?? "").trim();
@@ -27,9 +28,9 @@ export async function criarEventoCronograma(formData: FormData) {
 }
 
 export async function removerEventoCronograma(eventoId: string) {
-  const user = await requireInterno();
+  const user = await exigirPermissao("projeto.gerenciar");
   const evento = await prisma.eventoCronograma.findUniqueOrThrow({ where: { id: eventoId }, include: { projeto: true } });
-  assertAcessoContratante(user, evento.projeto.contratanteId);
+  await assertVeProjeto(user, evento.projetoId);
 
   await prisma.eventoCronograma.delete({ where: { id: eventoId } });
   revalidatePath(`/projetos/${evento.projetoId}`);

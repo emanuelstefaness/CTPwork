@@ -3,7 +3,10 @@ import type { Metadata } from "next";
 import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/tenant";
 import { assertAcessoContratante } from "@/lib/tenant";
-import { garantirEtapasDosContratos, progressoDoContrato } from "@/lib/fluxo-contrato";
+import { podeVerContrato } from "@/lib/visibilidade";
+import { lerIds, pode } from "@/lib/permissoes";
+
+import { garantirEtapasDosContratos, podeAvancarEtapa, progressoDoContrato } from "@/lib/fluxo-contrato";
 import { assinarContratoSeguro, criarProjetoDoContratoSeguro } from "@/lib/actions/formularios";
 import { FormSeguro } from "@/components/form-seguro";
 import { formatarDataHora, formatarDiaDoEvento, formatarRelativo } from "@/lib/formatters";
@@ -47,6 +50,7 @@ export default async function ContratoDetailPage({ params }: { params: Promise<{
   });
   if (!contrato) notFound();
   assertAcessoContratante(user, contrato.contratanteId);
+  if (!(await podeVerContrato(user, contrato.id))) notFound();
 
   // Tudo vem do fluxo do próprio contrato (Cadastros › Fluxos de contrato), não de etapas fixas.
   const { indice: idxAtual, atual: etapaAtual, proxima: proximaEtapa, concluido: naEtapaFinal, situacao, temEtapaDeAssinatura } = progressoDoContrato(contrato.etapas, contrato.etapaAtual);
@@ -54,14 +58,22 @@ export default async function ContratoDetailPage({ params }: { params: Promise<{
   const assinaturasOk = !temEtapaDeAssinatura || !!contrato.fluxoAssinatura?.concluido;
   const podeCriarProjeto = !!etapaAtual?.liberaProjeto && assinaturasOk && contrato.projetos.length === 0;
   const avancoBloqueadoPorAssinatura = naEtapaAssinatura && !contrato.fluxoAssinatura?.concluido;
+  // Permissões do perfil (Cadastros › Perfis) e restrição de quem conclui a etapa atual.
+  const gerencia = pode(user, "contrato.gerenciar");
+  const podeAvancar = !!etapaAtual && podeAvancarEtapa(user, etapaAtual);
+  const perfisDaEtapa = etapaAtual ? lerIds(etapaAtual.perfisQueAvancam) : [];
+  const nomesPerfisDaEtapa = perfisDaEtapa.length
+    ? (await prisma.perfil.findMany({ where: { id: { in: perfisDaEtapa } }, select: { nome: true } })).map((p) => p.nome).join(", ")
+    : "";
 
   const usuariosInternos = isInterno ? await prisma.user.findMany({ where: { tipo: "INTERNO", ativo: true }, orderBy: { nome: "asc" } }) : [];
   const tiposProjeto = isInterno ? await prisma.tipoProjetoModelo.findMany({ include: { _count: { select: { etapas: true } } }, orderBy: { nome: "asc" } }) : [];
 
   const signatarios = contrato.fluxoAssinatura?.signatarios ?? [];
   const assinados = signatarios.filter((s) => s.status === "ASSINADO").length;
+  // Pela prefeitura, só assina quem tem a permissão no perfil (ex.: o prefeito).
   const meuSignatario = contrato.fluxoAssinatura?.signatarios.find((s) =>
-    user.tipo === "EXTERNO" ? s.tipo === "EXTERNO" : s.userId === user.id
+    user.tipo === "EXTERNO" ? s.tipo === "EXTERNO" && pode(user, "contrato.assinar") : s.userId === user.id
   );
   const tags = contrato.tags ? (JSON.parse(contrato.tags) as string[]) : [];
   const statusGeral =
@@ -126,20 +138,24 @@ export default async function ContratoDetailPage({ params }: { params: Promise<{
 
       <div className="grid grid-cols-[minmax(0,1fr)] gap-5 lg:grid-cols-[minmax(0,1fr)_340px]">
         <div className="flex flex-col gap-5">
-          {isInterno && proximaEtapa && (
+          {gerencia && proximaEtapa && (
             <Panel title="Próxima etapa" description={`Etapa atual: ${etapaAtual?.nome}`}>
               <div className="px-5 py-4">
                 <AvancarEtapaForm
                   contratoId={contrato.id}
                   proximaEtapaNome={proximaEtapa.curto}
-                  bloqueado={avancoBloqueadoPorAssinatura}
-                  motivoBloqueio={avancoBloqueadoPorAssinatura ? `A etapa "${etapaAtual?.nome}" exige todas as assinaturas antes de avançar.` : undefined}
+                  bloqueado={avancoBloqueadoPorAssinatura || !podeAvancar}
+                  motivoBloqueio={
+                    !podeAvancar
+                      ? `A etapa "${etapaAtual?.nome}" só pode ser concluída por: ${nomesPerfisDaEtapa}.`
+                      : avancoBloqueadoPorAssinatura ? `A etapa "${etapaAtual?.nome}" exige todas as assinaturas antes de avançar.` : undefined
+                  }
                 />
               </div>
             </Panel>
           )}
 
-          {naEtapaAssinatura && isInterno && !contrato.fluxoAssinatura && (
+          {naEtapaAssinatura && gerencia && !contrato.fluxoAssinatura && (
             <Panel title="Abrir fluxo de assinatura" description="Escolha quem assina a minuta pelo CTP e pelo município.">
               <div className="px-5 py-5">
                 <AbrirFluxoAssinaturaForm contratoId={contrato.id} usuariosInternos={usuariosInternos.map((u) => ({ id: u.id, nome: u.nome }))} />
@@ -187,7 +203,7 @@ export default async function ContratoDetailPage({ params }: { params: Promise<{
             </Panel>
           )}
 
-          {podeCriarProjeto && isInterno && (
+          {podeCriarProjeto && gerencia && (
             <Panel title="Criar projeto técnico" description="O contrato chegou à etapa que libera o projeto. Gere o projeto com o fluxo de etapas do tipo escolhido.">
               <FormSeguro acao={criarProjetoDoContratoSeguro} limparAoEnviar={false} className="grid gap-4 px-5 py-5 sm:grid-cols-3" erroClassName="flex items-center gap-1.5 text-sm text-red-600 sm:col-span-3">
                 <input type="hidden" name="contratoId" value={contrato.id} />

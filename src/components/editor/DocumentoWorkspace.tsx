@@ -6,7 +6,7 @@ import { criarRascunho } from "@/lib/actions/documentos";
 import { formatarDiaDoEvento } from "@/lib/formatters";
 import { ComparacaoVersoes } from "./ComparacaoVersoes";
 import { VersaoDocumento } from "./VersaoDocumento";
-import type { VersaoView } from "./tipos";
+import type { UsuarioEditor, VersaoView } from "./tipos";
 
 function statusDaVersao(v: VersaoView, ehUltimaEnviada: boolean) {
   if (!v.enviadoEm) return { rotulo: "Rascunho", cor: "bg-amber-400" };
@@ -28,10 +28,11 @@ export function DocumentoWorkspace({
 }: {
   etapaId: string;
   versoes: VersaoView[];
-  usuario: { id: string; nome: string; tipo: string };
+  usuario: UsuarioEditor;
   tipoLabel: string;
 }) {
   const isInterno = usuario.tipo === "INTERNO";
+  const escreve = usuario.permissoes.includes("minuta.escrever");
   const visiveis = isInterno ? versoes : versoes.filter((v) => v.enviadoEm);
   const rascunho = visiveis.find((v) => !v.enviadoEm);
   const enviadas = visiveis.filter((v) => v.enviadoEm);
@@ -65,7 +66,7 @@ export function DocumentoWorkspace({
     return (
       <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-16 text-center">
         <span className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-cyan-50 text-cyan-700"><DocumentTextIcon className="h-7 w-7" /></span>
-        {isInterno ? (
+        {escreve ? (
           <>
             <h3 className="mt-4 text-base font-bold text-slate-900">Nenhum documento nesta etapa ainda</h3>
             <p className="mx-auto mt-1 max-w-md text-sm leading-6 text-slate-500">Escreva a minuta direto no sistema ou importe um arquivo Word. Quando estiver pronta, envie ao município para revisão.</p>
@@ -117,7 +118,7 @@ export function DocumentoWorkspace({
               <ArrowsRightLeftIcon className="h-4 w-4" /> Comparar versões
             </button>
           )}
-          {isInterno && !rascunho && (
+          {escreve && !rascunho && (
             <button type="button" onClick={novaVersao} disabled={pendente} className="primary-button min-h-9 px-3 py-1.5 text-xs">
               <DocumentPlusIcon className="h-4 w-4" /> {pendente ? "Criando…" : `Nova versão (v${(versoes[0]?.versao ?? 0) + 1})`}
             </button>
@@ -151,7 +152,7 @@ export function DocumentoWorkspace({
           versaoAnterior={anterior?.versao ?? null}
           usuario={usuario}
           tipoLabel={tipoLabel}
-          onIrParaRascunho={isInterno ? () => (rascunho ? setSelecionadaId(rascunho.id) : novaVersao()) : undefined}
+          onIrParaRascunho={escreve ? () => (rascunho ? setSelecionadaId(rascunho.id) : novaVersao()) : undefined}
           onEnviada={setEnviada}
         />
       )}

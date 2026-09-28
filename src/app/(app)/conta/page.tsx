@@ -11,7 +11,7 @@ export const metadata: Metadata = { title: "Minha conta" };
 export default async function ContaPage() {
   const sessao = await requireSession();
   const user = await prisma.user.findUniqueOrThrow({ where: { id: sessao.id }, include: { setor: true, municipio: true } });
-  const perfil = user.tipo === "INTERNO" ? (user.perfilInterno === "GESTOR" ? "Gestor CTP" : "Colaborador CTP") : "Município contratante";
+  const perfil = `${sessao.perfilNome} · ${user.tipo === "INTERNO" ? "equipe do CTP" : "prefeitura"}`;
 
   return (
     <div className="mx-auto max-w-4xl">

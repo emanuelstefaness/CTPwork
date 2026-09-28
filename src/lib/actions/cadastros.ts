@@ -2,18 +2,20 @@
 
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
-import { requireGestor } from "@/lib/tenant";
+import { exigirPermissao } from "@/lib/tenant";
 import { registrarAuditoria } from "@/lib/audit";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { chaveDaEtapa } from "@/lib/fluxo-contrato";
+import { lerPermissoes, permissoesDoTipo, type TipoPerfil } from "@/lib/permissoes";
+import { aindaHaAdministrador, MSG_SEM_ADMINISTRADOR } from "@/lib/usuarios-permissao";
 
 /** Cadastros de apoio (seção 5.7 do prompt mestre) — restritos a Gestor CTP. */
 
 // ---------- Setor ----------
 
 export async function criarSetor(formData: FormData) {
-  const user = await requireGestor();
+  const user = await exigirPermissao("cadastros");
   const nome = String(formData.get("nome") ?? "").trim();
   if (!nome) throw new Error("Nome do setor é obrigatório.");
 
@@ -26,7 +28,7 @@ export async function criarSetor(formData: FormData) {
 }
 
 export async function renomearSetor(formData: FormData) {
-  const user = await requireGestor();
+  const user = await exigirPermissao("cadastros");
   const setorId = String(formData.get("setorId"));
   const nome = String(formData.get("nome") ?? "").trim();
   if (!nome) throw new Error("Nome do setor é obrigatório.");
@@ -39,7 +41,7 @@ export async function renomearSetor(formData: FormData) {
 // ---------- Município ----------
 
 export async function criarMunicipio(formData: FormData) {
-  const user = await requireGestor();
+  const user = await exigirPermissao("cadastros");
   const nome = String(formData.get("nome") ?? "").trim();
   const contatoNome = String(formData.get("contatoNome") ?? "").trim() || null;
   const contatoEmail = String(formData.get("contatoEmail") ?? "").trim() || null;
@@ -52,7 +54,7 @@ export async function criarMunicipio(formData: FormData) {
 }
 
 export async function atualizarMunicipio(formData: FormData) {
-  const user = await requireGestor();
+  const user = await exigirPermissao("cadastros");
   const municipioId = String(formData.get("municipioId"));
   const nome = String(formData.get("nome") ?? "").trim();
   const contatoNome = String(formData.get("contatoNome") ?? "").trim() || null;
@@ -68,7 +70,7 @@ export async function atualizarMunicipio(formData: FormData) {
 // ---------- Usuário ----------
 
 export async function criarUsuario(formData: FormData) {
-  const user = await requireGestor();
+  const user = await exigirPermissao("cadastros");
   const nome = String(formData.get("nome") ?? "").trim();
   const email = String(formData.get("email") ?? "").trim().toLowerCase();
   const senha = String(formData.get("senha") ?? "");
@@ -82,27 +84,38 @@ export async function criarUsuario(formData: FormData) {
   if (existente) throw new Error(`Já existe um usuário com o e-mail "${email}".`);
 
   const passwordHash = await bcrypt.hash(senha, 10);
+  const perfil = await perfilDoFormulario(formData, tipo);
 
   if (tipo === "INTERNO") {
-    const perfilInterno = String(formData.get("perfilInterno") ?? "COLABORADOR");
     const setorId = String(formData.get("setorId") ?? "") || null;
     if (!setorId) throw new Error("Selecione o setor do colaborador.");
 
-    const novo = await prisma.user.create({ data: { nome, email, passwordHash, tipo, perfilInterno, setorId } });
-    await registrarAuditoria({ userId: user.id, acao: "CRIAR", entidadeTipo: "User", entidadeId: novo.id, detalhe: email });
+    const novo = await prisma.user.create({ data: { nome, email, passwordHash, tipo, perfilId: perfil.id, perfilInterno: perfilLegado(perfil), setorId } });
+    await registrarAuditoria({ userId: user.id, acao: "CRIAR", entidadeTipo: "User", entidadeId: novo.id, detalhe: `${email} · ${perfil.nome}` });
   } else {
     const municipioId = String(formData.get("municipioId") ?? "") || null;
     if (!municipioId) throw new Error("Selecione o município deste usuário externo.");
 
-    const novo = await prisma.user.create({ data: { nome, email, passwordHash, tipo, municipioId } });
-    await registrarAuditoria({ userId: user.id, acao: "CRIAR", entidadeTipo: "User", entidadeId: novo.id, detalhe: email });
+    const novo = await prisma.user.create({ data: { nome, email, passwordHash, tipo, perfilId: perfil.id, municipioId } });
+    await registrarAuditoria({ userId: user.id, acao: "CRIAR", entidadeTipo: "User", entidadeId: novo.id, detalhe: `${email} · ${perfil.nome}` });
   }
 
   revalidatePath("/cadastros");
 }
 
+/** Perfil escolhido no formulário de usuário — tem de ser do mesmo tipo (CTP ou prefeitura). */
+async function perfilDoFormulario(formData: FormData, tipo: string) {
+  const perfilId = String(formData.get("perfilId") ?? "");
+  const perfil = perfilId ? await prisma.perfil.findUnique({ where: { id: perfilId } }) : null;
+  if (!perfil || perfil.tipo !== tipo) throw new Error(tipo === "INTERNO" ? "Escolha o perfil do colaborador." : "Escolha o perfil do usuário da prefeitura.");
+  return perfil;
+}
+
+/** Campo antigo `perfilInterno`, mantido coerente para quem ainda o lê. */
+const perfilLegado = (perfil: { permissoes: string }) => (lerPermissoes(perfil.permissoes, "INTERNO").includes("cadastros") ? "GESTOR" : "COLABORADOR");
+
 export async function atualizarUsuario(formData: FormData) {
-  const user = await requireGestor();
+  const user = await exigirPermissao("cadastros");
   const usuarioId = String(formData.get("usuarioId"));
   const nome = String(formData.get("nome") ?? "").trim();
   const novaSenha = String(formData.get("novaSenha") ?? "");
@@ -110,10 +123,14 @@ export async function atualizarUsuario(formData: FormData) {
   if (novaSenha && novaSenha.length < 6) throw new Error("A nova senha precisa ter ao menos 6 caracteres.");
 
   const alvo = await prisma.user.findUniqueOrThrow({ where: { id: usuarioId } });
+  const perfil = await perfilDoFormulario(formData, alvo.tipo);
+  if (perfil.id !== alvo.perfilId && !(await aindaHaAdministrador({ trocarPerfil: { usuarioId, perfilId: perfil.id } }))) {
+    throw new Error(MSG_SEM_ADMINISTRADOR);
+  }
 
-  const data: { nome: string; perfilInterno?: string; setorId?: string; municipioId?: string; passwordHash?: string } = { nome };
+  const data: { nome: string; perfilId: string; perfilInterno?: string; setorId?: string; municipioId?: string; passwordHash?: string } = { nome, perfilId: perfil.id };
   if (alvo.tipo === "INTERNO") {
-    data.perfilInterno = String(formData.get("perfilInterno") ?? alvo.perfilInterno ?? "COLABORADOR");
+    data.perfilInterno = perfilLegado(perfil);
     const setorId = String(formData.get("setorId") ?? "");
     if (!setorId) throw new Error("Selecione o setor do colaborador.");
     data.setorId = setorId;
@@ -135,15 +152,14 @@ export async function atualizarUsuario(formData: FormData) {
  * no próximo clique (ver sessaoValidaOuNula) e some das listas de escolha e dos avisos.
  */
 export async function alterarAcessoUsuario(usuarioId: string, ativo: boolean) {
-  const user = await requireGestor();
+  const user = await exigirPermissao("cadastros");
   if (usuarioId === user.id && !ativo) throw new Error("Você não pode desativar o seu próprio acesso.");
   const alvo = await prisma.user.findUnique({ where: { id: usuarioId } });
   if (!alvo) throw new Error("Usuário não encontrado.");
   if (alvo.ativo === ativo) return;
 
-  if (!ativo && alvo.perfilInterno === "GESTOR") {
-    const outrosGestores = await prisma.user.count({ where: { perfilInterno: "GESTOR", ativo: true, id: { not: usuarioId } } });
-    if (outrosGestores === 0) throw new Error("Este é o único gestor ativo. Promova outra pessoa a gestor antes de desativá-lo.");
+  if (!ativo && !(await aindaHaAdministrador({ desativarUsuarioId: usuarioId }))) {
+    throw new Error("Esta é a única pessoa ativa com acesso a Cadastros. Dê esse acesso a outra pessoa antes de desativá-la.");
   }
 
   await prisma.$transaction([
@@ -177,7 +193,7 @@ function montarCampos(formData: FormData) {
 }
 
 export async function criarModeloFormulario(formData: FormData) {
-  const user = await requireGestor();
+  const user = await exigirPermissao("cadastros");
   const nome = String(formData.get("nome") ?? "").trim();
   const tipo = String(formData.get("tipo"));
   if (!nome) throw new Error("Nome do modelo é obrigatório.");
@@ -191,7 +207,7 @@ export async function criarModeloFormulario(formData: FormData) {
 }
 
 export async function atualizarModeloFormulario(formData: FormData) {
-  const user = await requireGestor();
+  const user = await exigirPermissao("cadastros");
   const modeloId = String(formData.get("modeloId"));
   const nome = String(formData.get("nome") ?? "").trim();
   if (!nome) throw new Error("Nome do modelo é obrigatório.");
@@ -203,19 +219,87 @@ export async function atualizarModeloFormulario(formData: FormData) {
   revalidatePath("/cadastros");
 }
 
+// ---------- Perfis (cargos) e permissões ----------
+
+export async function criarPerfil(formData: FormData) {
+  const user = await exigirPermissao("cadastros");
+  const nome = String(formData.get("nome") ?? "").trim().slice(0, 60);
+  const tipo = String(formData.get("tipo")) as TipoPerfil;
+  const baseId = String(formData.get("baseId") ?? "");
+  if (!nome) throw new Error("Dê um nome ao perfil (ex.: Jurídico, Prefeito).");
+  if (tipo !== "INTERNO" && tipo !== "EXTERNO") throw new Error("Escolha se o perfil é da equipe do CTP ou da prefeitura.");
+  if (await prisma.perfil.findUnique({ where: { nome } })) throw new Error(`Já existe um perfil chamado "${nome}".`);
+
+  // Pode começar como cópia de outro perfil do mesmo tipo.
+  const base = baseId ? await prisma.perfil.findUnique({ where: { id: baseId } }) : null;
+  if (base && base.tipo !== tipo) throw new Error("O perfil copiado precisa ser do mesmo tipo.");
+  const perfil = await prisma.perfil.create({
+    data: { nome, tipo, permissoes: base?.permissoes ?? "[]", somenteParticipa: base?.somenteParticipa ?? false },
+  });
+  await registrarAuditoria({ userId: user.id, acao: "CRIAR", entidadeTipo: "Perfil", entidadeId: perfil.id, detalhe: nome });
+  revalidatePath("/cadastros");
+  redirect(`/cadastros?aba=perfis&perfil=${perfil.id}`);
+}
+
+export async function atualizarPerfil(formData: FormData) {
+  const user = await exigirPermissao("cadastros");
+  const perfilId = String(formData.get("perfilId"));
+  const perfil = await prisma.perfil.findUniqueOrThrow({ where: { id: perfilId } });
+  const nome = String(formData.get("nome") ?? "").trim().slice(0, 60);
+  const descricao = String(formData.get("descricao") ?? "").trim().slice(0, 200) || null;
+  if (!nome) throw new Error("Dê um nome ao perfil.");
+  const mesmoNome = await prisma.perfil.findUnique({ where: { nome } });
+  if (mesmoNome && mesmoNome.id !== perfilId) throw new Error(`Já existe um perfil chamado "${nome}".`);
+
+  const validas = permissoesDoTipo(perfil.tipo as TipoPerfil);
+  const permissoes = formData.getAll("permissao").map(String).filter((p) => (validas as string[]).includes(p));
+  if (!(await aindaHaAdministrador({ editarPerfil: { perfilId, permissoes } }))) throw new Error(MSG_SEM_ADMINISTRADOR);
+
+  await prisma.perfil.update({
+    where: { id: perfilId },
+    data: {
+      nome,
+      descricao,
+      permissoes: JSON.stringify(permissoes),
+      somenteParticipa: perfil.tipo === "INTERNO" && formData.get("somenteParticipa") === "on",
+    },
+  });
+  // Mantém coerente o campo antigo `perfilInterno` de quem usa este perfil.
+  if (perfil.tipo === "INTERNO") {
+    await prisma.user.updateMany({ where: { perfilId }, data: { perfilInterno: permissoes.includes("cadastros") ? "GESTOR" : "COLABORADOR" } });
+  }
+  await registrarAuditoria({ userId: user.id, acao: "ATUALIZAR", entidadeTipo: "Perfil", entidadeId: perfilId, detalhe: `${nome}: ${permissoes.join(", ") || "nenhuma permissão"}` });
+  revalidatePath("/", "layout");
+}
+
+export async function excluirPerfil(perfilId: string) {
+  const user = await exigirPermissao("cadastros");
+  const perfil = await prisma.perfil.findUniqueOrThrow({ where: { id: perfilId }, include: { _count: { select: { usuarios: true } } } });
+  if (perfil.sistema) throw new Error("Perfis de fábrica podem ser editados, mas não excluídos.");
+  if (perfil._count.usuarios > 0) throw new Error(`Há ${perfil._count.usuarios} usuário(s) com este perfil. Mude o perfil deles antes de excluir.`);
+  await prisma.perfil.delete({ where: { id: perfilId } });
+  await registrarAuditoria({ userId: user.id, acao: "REMOVER", entidadeTipo: "Perfil", entidadeId: perfilId, detalhe: perfil.nome });
+  revalidatePath("/cadastros");
+  redirect("/cadastros?aba=perfis");
+}
+
 // ---------- Fluxos de contrato (tipos de contrato + etapas configuráveis) ----------
 // Como nos fluxos de projeto: editar um tipo só vale para contratos criados depois — os que já
 // existem têm a própria cópia das etapas (EtapaContrato). Tipos não são apagados, só desativados,
 // porque há contratos ligados a eles.
 
-function lerEtapaContrato(formData: FormData) {
+async function lerEtapaContrato(formData: FormData) {
   const nome = String(formData.get("nome") ?? "").trim().slice(0, 120);
   const curto = String(formData.get("curto") ?? "").trim().slice(0, 24) || nome.slice(0, 24);
+  // Quem pode concluir a etapa: só perfis do CTP que existem; nenhum marcado = quem gerencia contratos.
+  const marcados = formData.getAll("perfisQueAvancam").map(String);
+  const validos = marcados.length ? await prisma.perfil.findMany({ where: { id: { in: marcados }, tipo: "INTERNO" }, select: { id: true } }) : [];
   return {
     nome,
     curto,
     exigeAssinaturas: formData.get("exigeAssinaturas") === "on",
     liberaProjeto: formData.get("liberaProjeto") === "on",
+    perfisQueAvancam: JSON.stringify(validos.map((p) => p.id)),
   };
 }
 
@@ -226,7 +310,7 @@ async function validarAssinaturaUnica(fluxoId: string, exigeAssinaturas: boolean
 }
 
 export async function criarFluxoContrato(formData: FormData) {
-  const user = await requireGestor();
+  const user = await exigirPermissao("cadastros");
   const nome = String(formData.get("nome") ?? "").trim().slice(0, 80);
   const baseId = String(formData.get("baseId") ?? "");
   if (!nome) throw new Error("Dê um nome ao tipo de contrato.");
@@ -238,7 +322,7 @@ export async function criarFluxoContrato(formData: FormData) {
     data: {
       nome,
       descricao: base?.descricao ?? null,
-      etapas: base ? { create: base.etapas.map(({ ordem, chave, nome, curto, exigeAssinaturas, liberaProjeto }) => ({ ordem, chave, nome, curto, exigeAssinaturas, liberaProjeto })) } : undefined,
+      etapas: base ? { create: base.etapas.map(({ ordem, chave, nome, curto, exigeAssinaturas, liberaProjeto, perfisQueAvancam }) => ({ ordem, chave, nome, curto, exigeAssinaturas, liberaProjeto, perfisQueAvancam })) } : undefined,
     },
   });
   await registrarAuditoria({ userId: user.id, acao: "CRIAR", entidadeTipo: "FluxoContrato", entidadeId: fluxo.id, detalhe: base ? `${nome} (cópia de ${base.nome})` : nome });
@@ -247,7 +331,7 @@ export async function criarFluxoContrato(formData: FormData) {
 }
 
 export async function atualizarFluxoContrato(formData: FormData) {
-  const user = await requireGestor();
+  const user = await exigirPermissao("cadastros");
   const fluxoId = String(formData.get("fluxoId"));
   const nome = String(formData.get("nome") ?? "").trim().slice(0, 80);
   const descricao = String(formData.get("descricao") ?? "").trim().slice(0, 300) || null;
@@ -260,7 +344,7 @@ export async function atualizarFluxoContrato(formData: FormData) {
 }
 
 export async function alternarFluxoContrato(fluxoId: string, ativo: boolean) {
-  const user = await requireGestor();
+  const user = await exigirPermissao("cadastros");
   if (!ativo) {
     const outrosUtilizaveis = await prisma.fluxoContrato.count({ where: { ativo: true, id: { not: fluxoId }, etapas: { some: { ordem: { gte: 1 } } } } });
     if (outrosUtilizaveis === 0) throw new Error("Este é o único tipo de contrato em uso. Crie ou ative outro antes de desativá-lo.");
@@ -271,9 +355,9 @@ export async function alternarFluxoContrato(fluxoId: string, ativo: boolean) {
 }
 
 export async function criarEtapaFluxoContrato(formData: FormData) {
-  const user = await requireGestor();
+  const user = await exigirPermissao("cadastros");
   const fluxoId = String(formData.get("fluxoId"));
-  const dados = lerEtapaContrato(formData);
+  const dados = await lerEtapaContrato(formData);
   if (!dados.nome) throw new Error("Nome da etapa é obrigatório.");
   await validarAssinaturaUnica(fluxoId, dados.exigeAssinaturas);
 
@@ -289,9 +373,9 @@ export async function criarEtapaFluxoContrato(formData: FormData) {
 }
 
 export async function atualizarEtapaFluxoContrato(formData: FormData) {
-  const user = await requireGestor();
+  const user = await exigirPermissao("cadastros");
   const etapaId = String(formData.get("etapaId"));
-  const dados = lerEtapaContrato(formData);
+  const dados = await lerEtapaContrato(formData);
   if (!dados.nome) throw new Error("Nome da etapa é obrigatório.");
   const etapa = await prisma.etapaFluxoContrato.findUniqueOrThrow({ where: { id: etapaId } });
   await validarAssinaturaUnica(etapa.fluxoId, dados.exigeAssinaturas, etapaId);
@@ -301,7 +385,7 @@ export async function atualizarEtapaFluxoContrato(formData: FormData) {
 }
 
 export async function removerEtapaFluxoContrato(etapaId: string) {
-  const user = await requireGestor();
+  const user = await exigirPermissao("cadastros");
   const etapa = await prisma.etapaFluxoContrato.findUniqueOrThrow({ where: { id: etapaId } });
   await prisma.etapaFluxoContrato.delete({ where: { id: etapaId } });
   await registrarAuditoria({ userId: user.id, acao: "REMOVER", entidadeTipo: "EtapaFluxoContrato", entidadeId: etapaId, detalhe: etapa.nome });
@@ -309,7 +393,7 @@ export async function removerEtapaFluxoContrato(etapaId: string) {
 }
 
 export async function moverEtapaFluxoContrato(etapaId: string, direcao: "up" | "down") {
-  const user = await requireGestor();
+  const user = await exigirPermissao("cadastros");
   const atual = await prisma.etapaFluxoContrato.findUniqueOrThrow({ where: { id: etapaId } });
   const vizinha = await prisma.etapaFluxoContrato.findFirst({
     where: { fluxoId: atual.fluxoId, ordem: direcao === "up" ? { lt: atual.ordem } : { gt: atual.ordem } },
@@ -340,7 +424,7 @@ function slugificarChave(nome: string) {
 }
 
 export async function criarTipoProjeto(formData: FormData) {
-  const user = await requireGestor();
+  const user = await exigirPermissao("cadastros");
   const nome = String(formData.get("nome") ?? "").trim();
   if (!nome) throw new Error("Nome do tipo de projeto é obrigatório.");
 
@@ -357,7 +441,7 @@ export async function criarTipoProjeto(formData: FormData) {
 }
 
 export async function renomearTipoProjeto(formData: FormData) {
-  const user = await requireGestor();
+  const user = await exigirPermissao("cadastros");
   const tipoId = String(formData.get("tipoId"));
   const nome = String(formData.get("nome") ?? "").trim();
   if (!nome) throw new Error("Nome é obrigatório.");
@@ -379,7 +463,7 @@ function lerCapacidadesEtapa(formData: FormData) {
 }
 
 export async function criarEtapaModelo(formData: FormData) {
-  const user = await requireGestor();
+  const user = await exigirPermissao("cadastros");
   const tipoProjetoModeloId = String(formData.get("tipoProjetoModeloId"));
   const dados = lerCapacidadesEtapa(formData);
   if (!dados.nome) throw new Error("Nome da etapa é obrigatório.");
@@ -393,7 +477,7 @@ export async function criarEtapaModelo(formData: FormData) {
 }
 
 export async function atualizarEtapaModelo(formData: FormData) {
-  const user = await requireGestor();
+  const user = await exigirPermissao("cadastros");
   const etapaModeloId = String(formData.get("etapaModeloId"));
   const dados = lerCapacidadesEtapa(formData);
   if (!dados.nome) throw new Error("Nome da etapa é obrigatório.");
@@ -404,7 +488,7 @@ export async function atualizarEtapaModelo(formData: FormData) {
 }
 
 export async function removerEtapaModelo(etapaModeloId: string) {
-  const user = await requireGestor();
+  const user = await exigirPermissao("cadastros");
   const etapa = await prisma.etapaModelo.findUniqueOrThrow({ where: { id: etapaModeloId } });
 
   await prisma.etapaModelo.delete({ where: { id: etapaModeloId } });
@@ -413,7 +497,7 @@ export async function removerEtapaModelo(etapaModeloId: string) {
 }
 
 export async function moverEtapaModelo(etapaModeloId: string, direcao: "up" | "down") {
-  const user = await requireGestor();
+  const user = await exigirPermissao("cadastros");
   const atual = await prisma.etapaModelo.findUniqueOrThrow({ where: { id: etapaModeloId } });
   const vizinha = await prisma.etapaModelo.findFirst({
     where: {

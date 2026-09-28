@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { requireSession, assertAcessoContratante, AcessoNegadoError } from "@/lib/tenant";
 import { lerDocumento } from "@/lib/editor/servidor";
 import { gerarDocx } from "@/lib/editor/docx";
+import { podeVerProjeto } from "@/lib/visibilidade";
 import type { TipoAnotacao } from "@/lib/editor/extensoes";
 
 export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -27,6 +28,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     throw e;
   }
   if (!documento.enviadoEm && user.tipo !== "INTERNO") return new Response("Documento não disponível", { status: 403 });
+  if (!(await podeVerProjeto(user, documento.etapa.projetoId))) return new Response("Acesso negado", { status: 403 });
 
   const titulo = documento.titulo ?? documento.nomeArquivo;
   const buffer = await gerarDocx({

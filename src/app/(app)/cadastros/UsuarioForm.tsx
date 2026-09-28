@@ -6,12 +6,13 @@ import { useEnvio } from "@/components/use-envio";
 
 type Setor = { id: string; nome: string };
 type Municipio = { id: string; nome: string };
+type Perfil = { id: string; nome: string; tipo: string };
 type UsuarioEdit = {
   id: string;
   nome: string;
   email: string;
   tipo: string;
-  perfilInterno: string | null;
+  perfilId: string | null;
   setorId: string | null;
   municipioId: string | null;
 };
@@ -28,12 +29,14 @@ export default function UsuarioForm({
   modo,
   setores,
   municipios,
+  perfis,
   usuario,
   action,
 }: {
   modo: "criar" | "editar";
   setores: Setor[];
   municipios: Municipio[];
+  perfis: Perfil[];
   usuario?: UsuarioEdit;
   action: (formData: FormData) => Promise<Resultado<unknown>>;
 }) {
@@ -86,13 +89,6 @@ export default function UsuarioForm({
               {setores.map((s) => <option key={s.id} value={s.id}>{s.nome}</option>)}
             </select>
           </label>
-          <label className="text-xs font-semibold text-slate-600">
-            Perfil
-            <select name="perfilInterno" defaultValue={usuario?.perfilInterno ?? "COLABORADOR"} className="form-control mt-1 py-2 text-sm">
-              <option value="COLABORADOR">Colaborador</option>
-              <option value="GESTOR">Gestor</option>
-            </select>
-          </label>
         </>
       ) : (
         <label className="text-xs font-semibold text-slate-600">
@@ -103,6 +99,20 @@ export default function UsuarioForm({
           </select>
         </label>
       )}
+
+      {/* Perfil (cargo): define o que a pessoa vê e faz — ver Cadastros › Perfis. */}
+      <label className="text-xs font-semibold text-slate-600">
+        Perfil
+        <select
+          key={tipo}
+          name="perfilId"
+          required
+          defaultValue={usuario?.perfilId ?? perfis.find((p) => p.tipo === tipo)?.id ?? ""}
+          className="form-control mt-1 py-2 text-sm"
+        >
+          {perfis.filter((p) => p.tipo === tipo).map((p) => <option key={p.id} value={p.id}>{p.nome}</option>)}
+        </select>
+      </label>
 
       {modo === "editar" && (
         <label className="text-xs font-semibold text-slate-600">

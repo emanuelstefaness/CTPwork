@@ -2,6 +2,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { requireInterno } from "@/lib/tenant";
+import { pode } from "@/lib/permissoes";
 import { registrarAuditoria } from "@/lib/audit";
 import { gerarCodigoMemorando } from "@/lib/codigos";
 import { getSignatureProvider } from "@/lib/signature/provider";
@@ -150,8 +151,8 @@ export async function cancelarMemorando(memorandoId: string) {
   const user = await requireInterno();
   const memorando = await prisma.memorando.findUniqueOrThrow({ where: { id: memorandoId } });
 
-  const podeCancel = memorando.criadoPorId === user.id || user.perfilInterno === "GESTOR";
-  if (!podeCancel) throw new Error("Apenas o emissor ou um Gestor pode cancelar.");
+  const podeCancel = memorando.criadoPorId === user.id || pode(user, "memorando.gerenciar");
+  if (!podeCancel) throw new Error("Só quem criou o memorando, ou um perfil com permissão para cancelar memorandos de outras pessoas, pode cancelá-lo.");
   if (memorando.status === STATUS_MEMORANDO.CONCLUIDO) {
     throw new Error("Memorando já concluído não pode ser cancelado.");
   }

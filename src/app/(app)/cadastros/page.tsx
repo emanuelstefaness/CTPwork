@@ -9,20 +9,22 @@ import { FormSeguro } from "@/components/form-seguro";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
-import { requireGestor } from "@/lib/tenant";
+import { exigirPermissao } from "@/lib/tenant";
 import { removerEtapaModelo, moverEtapaModelo } from "@/lib/actions/cadastros";
 import { PageHeader, Panel, Badge } from "@/components/ui";
 import UsuarioForm from "./UsuarioForm";
+import { AbaPerfis } from "./AbaPerfis";
 import { BotaoAcessoUsuario } from "./BotaoAcessoUsuario";
 import { formatarDiaDoEvento } from "@/lib/formatters";
 import ModeloFormularioForm from "./ModeloFormularioForm";
 import EtapaModeloRow from "./EtapaModeloRow";
 import NovaEtapaModeloForm from "./NovaEtapaModeloForm";
-import { BuildingLibraryIcon, ClipboardDocumentListIcon, DocumentTextIcon, PlusIcon, RectangleGroupIcon, RectangleStackIcon, UsersIcon } from "@heroicons/react/24/outline";
+import { BuildingLibraryIcon, ClipboardDocumentListIcon, DocumentTextIcon, PlusIcon, RectangleGroupIcon, RectangleStackIcon, ShieldCheckIcon, UsersIcon } from "@heroicons/react/24/outline";
 
 const ABAS = [
   { chave: "setores", label: "Setores", icon: RectangleGroupIcon },
   { chave: "usuarios", label: "Usuários", icon: UsersIcon },
+  { chave: "perfis", label: "Perfis e permissões", icon: ShieldCheckIcon },
   { chave: "municipios", label: "Municípios", icon: BuildingLibraryIcon },
   { chave: "modelos", label: "Modelos de formulário", icon: DocumentTextIcon },
   { chave: "fluxos", label: "Fluxos de projeto", icon: RectangleStackIcon },
@@ -31,25 +33,29 @@ const ABAS = [
 
 export const metadata: Metadata = { title: "Cadastros" };
 
-export default async function CadastrosPage({ searchParams }: { searchParams: Promise<{ aba?: string; editar?: string; fluxo?: string }> }) {
-  const gestor = await requireGestor();
-  const { aba: abaParam, editar, fluxo: fluxoParam } = await searchParams;
+export default async function CadastrosPage({ searchParams }: { searchParams: Promise<{ aba?: string; editar?: string; fluxo?: string; perfil?: string }> }) {
+  const gestor = await exigirPermissao("cadastros");
+  const { aba: abaParam, editar, fluxo: fluxoParam, perfil: perfilParam } = await searchParams;
   const aba = ABAS.some((a) => a.chave === abaParam) ? abaParam! : "setores";
 
-  const [setores, municipios, usuarios, modelos, tiposProjeto, fluxosContrato] = await Promise.all([
+  const [setores, municipios, usuarios, modelos, tiposProjeto, fluxosContrato, perfis] = await Promise.all([
     prisma.setor.findMany({ orderBy: { nome: "asc" } }),
     prisma.municipio.findMany({ orderBy: { nome: "asc" } }),
-    prisma.user.findMany({ include: { setor: true, municipio: true }, orderBy: { nome: "asc" } }),
+    prisma.user.findMany({ include: { setor: true, municipio: true, perfil: { select: { nome: true } } }, orderBy: { nome: "asc" } }),
     prisma.modeloFormulario.findMany({ orderBy: { nome: "asc" } }),
     prisma.tipoProjetoModelo.findMany({ include: { etapas: { orderBy: { ordem: "asc" } } }, orderBy: { nome: "asc" } }),
     prisma.fluxoContrato.findMany({ include: { etapas: { orderBy: { ordem: "asc" } }, _count: { select: { contratos: true } } }, orderBy: [{ ativo: "desc" }, { nome: "asc" }] }),
+    prisma.perfil.findMany({ include: { _count: { select: { usuarios: true } } }, orderBy: [{ tipo: "desc" }, { nome: "asc" }] }),
   ]);
+  const perfilSel = perfis.find((p) => p.id === perfilParam) ?? perfis[0];
+  const perfisOpcoes = perfis.map((p) => ({ id: p.id, nome: p.nome, tipo: p.tipo }));
+  const perfisInternos = perfisOpcoes.filter((p) => p.tipo === "INTERNO");
   const fluxoSelecionado = tiposProjeto.find((t) => t.id === fluxoParam) ?? tiposProjeto[0];
   const fluxoContratoSel = fluxosContrato.find((f) => f.id === fluxoParam) ?? fluxosContrato[0];
 
   return (
     <div className="mx-auto max-w-[1200px]">
-      <PageHeader eyebrow="Administração" title="Cadastros" description="Setores, usuários, municípios, modelos de formulário e fluxos de projeto — restrito a Gestor CTP." />
+      <PageHeader eyebrow="Administração" title="Cadastros" description="Usuários, perfis e permissões, municípios, setores, modelos de formulário e fluxos de projeto e de contrato." />
 
       <div className="surface-panel mb-5 flex flex-wrap gap-1 p-1.5">
         {ABAS.map((a) => (
@@ -183,7 +189,8 @@ export default async function CadastrosPage({ searchParams }: { searchParams: Pr
                       modo="editar"
                       setores={setores}
                       municipios={municipios}
-                      usuario={{ id: u.id, nome: u.nome, email: u.email, tipo: u.tipo, perfilInterno: u.perfilInterno, setorId: u.setorId, municipioId: u.municipioId }}
+                      perfis={perfisOpcoes}
+                      usuario={{ id: u.id, nome: u.nome, email: u.email, tipo: u.tipo, perfilId: u.perfilId, setorId: u.setorId, municipioId: u.municipioId }}
                       action={atualizarUsuarioSeguro}
                     />
                   ) : (
@@ -191,7 +198,7 @@ export default async function CadastrosPage({ searchParams }: { searchParams: Pr
                       <div className={`min-w-0 ${u.ativo ? "" : "opacity-60"}`}>
                         <div className="flex flex-wrap items-center gap-2">
                           <p className="truncate text-sm font-semibold text-slate-800">{u.nome}</p>
-                          <Badge tone={u.tipo === "INTERNO" ? "cyan" : "emerald"}>{u.tipo === "INTERNO" ? (u.perfilInterno === "GESTOR" ? "Gestor CTP" : "Colaborador CTP") : "Município"}</Badge>
+                          <Badge tone={u.tipo === "INTERNO" ? "cyan" : "emerald"}>{u.perfil?.nome ?? (u.tipo === "INTERNO" ? "Colaborador" : "Município")}{u.tipo === "INTERNO" ? " · CTP" : ""}</Badge>
                           {!u.ativo && <Badge tone="slate">Desativado{u.desativadoEm ? ` em ${formatarDiaDoEvento(u.desativadoEm)}` : ""}</Badge>}
                         </div>
                         <p className="mt-0.5 truncate text-xs text-slate-400">{u.email} · {u.tipo === "INTERNO" ? (u.setor?.nome ?? "sem setor") : (u.municipio?.nome ?? "sem município")}</p>
@@ -209,11 +216,13 @@ export default async function CadastrosPage({ searchParams }: { searchParams: Pr
           </Panel>
           <Panel title="Novo usuário">
             <div className="p-5">
-              <UsuarioForm modo="criar" setores={setores} municipios={municipios} action={criarUsuarioSeguro} />
+              <UsuarioForm modo="criar" setores={setores} municipios={municipios} perfis={perfisOpcoes} action={criarUsuarioSeguro} />
             </div>
           </Panel>
         </div>
       )}
+
+      {aba === "perfis" && <AbaPerfis perfis={perfis} selecionado={perfilSel} />}
 
       {aba === "modelos" && (
         <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_420px]">
@@ -397,9 +406,9 @@ export default async function CadastrosPage({ searchParams }: { searchParams: Pr
                   </p>
                 )}
                 {fluxoContratoSel.etapas.map((etapa, i) => (
-                  <EtapaFluxoContratoRow key={etapa.id} etapa={etapa} posicao={i} total={fluxoContratoSel.etapas.length} />
+                  <EtapaFluxoContratoRow key={etapa.id} etapa={etapa} posicao={i} total={fluxoContratoSel.etapas.length} perfis={perfisInternos} />
                 ))}
-                <NovaEtapaFluxoContrato fluxoId={fluxoContratoSel.id} />
+                <NovaEtapaFluxoContrato fluxoId={fluxoContratoSel.id} perfis={perfisInternos} />
               </div>
             </Panel>
           )}

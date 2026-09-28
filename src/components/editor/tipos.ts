@@ -4,6 +4,9 @@ import type { DecisaoSugestao, TipoAnotacao } from "@/lib/editor/extensoes";
 
 export type PessoaView = { id: string; nome: string; tipo: string };
 
+/** Quem está usando o editor, com as permissões do perfil (ver src/lib/permissoes.ts). */
+export type UsuarioEditor = { id: string; nome: string; tipo: string; permissoes: readonly string[] };
+
 export type RespostaView = { id: string; autor: PessoaView; texto: string; criadoEm: string };
 
 export type AnotacaoView = {

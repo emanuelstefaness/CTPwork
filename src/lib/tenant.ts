@@ -1,6 +1,8 @@
+import { cache } from "react";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { TIPO_USUARIO } from "@/lib/constants";
+import { PERMISSOES, lerPermissoes, pode, perfilPadrao, type Acesso, type Permissao } from "@/lib/permissoes";
 
 export class AcessoNegadoError extends Error {
   constructor(msg = "Acesso negado") {
@@ -32,30 +34,64 @@ export type SessaoAtual = {
   perfilInterno: string | null;
   setorId: string | null;
   municipioId: string | null;
-};
+} & Acesso;
 
-/** Sessão do cookie, só se o usuário ainda existir no banco — nunca lança, usada em páginas/layouts que preferem redirect a erro. */
-export async function sessaoValidaOuNula(): Promise<SessaoAtual | null> {
+type Carregada = { sessao: SessaoAtual } | { invalida: "inexistente" | "desativado" } | null;
+
+/**
+ * Sessão da requisição, lida do banco a cada request (uma vez só, graças ao `cache`): perfil,
+ * permissões, tipo e município valem na hora em que o gestor os muda — o JWT só identifica a pessoa.
+ */
+const carregarSessao = cache(async (): Promise<Carregada> => {
   const session = await auth();
-  if (!session?.user) return null;
+  if (!session?.user?.id) return null;
+  const u = await prisma.user.findUnique({
+    where: { id: session.user.id },
+    select: {
+      id: true, nome: true, email: true, tipo: true, perfilInterno: true, setorId: true, municipioId: true, ativo: true,
+      perfil: { select: { id: true, nome: true, tipo: true, permissoes: true, somenteParticipa: true } },
+    },
+  });
+  if (!u) return { invalida: "inexistente" };
+  if (!u.ativo) return { invalida: "desativado" };
 
-  const existe = await prisma.user.findUnique({ where: { id: session.user.id }, select: { ativo: true } });
+  // Sem perfil (ou com perfil de outro tipo): cai no perfil de fábrica do seu tipo.
+  const perfil = u.perfil && u.perfil.tipo === u.tipo
+    ? u.perfil
+    : await prisma.perfil.findUnique({ where: { id: perfilPadrao(u) }, select: { id: true, nome: true, tipo: true, permissoes: true, somenteParticipa: true } });
+
+  return {
+    sessao: {
+      id: u.id,
+      name: u.nome,
+      email: u.email,
+      tipo: u.tipo,
+      perfilInterno: u.perfilInterno,
+      setorId: u.setorId,
+      municipioId: u.municipioId,
+      perfilId: perfil?.id ?? perfilPadrao(u),
+      perfilNome: perfil?.nome ?? (u.tipo === "EXTERNO" ? "Município" : "Colaborador"),
+      permissoes: lerPermissoes(perfil?.permissoes, u.tipo),
+      somenteParticipa: u.tipo === "INTERNO" && !!perfil?.somenteParticipa,
+    },
+  };
+});
+
+/** Sessão do cookie, só se o usuário existir e estiver ativo — nunca lança, usada em páginas/layouts que preferem redirect a erro. */
+export async function sessaoValidaOuNula(): Promise<SessaoAtual | null> {
+  const r = await carregarSessao();
   // Usuário desativado cai aqui também: o layout manda para /api/sair-sessao-invalida, que apaga o cookie.
-  if (!existe?.ativo) return null;
-
-  return session.user as SessaoAtual;
+  return r && "sessao" in r ? r.sessao : null;
 }
 
-/** Exige sessão autenticada e válida (usuário do cookie ainda existe no banco). */
+/** Exige sessão autenticada e válida (usuário do cookie existe e está ativo). */
 export async function requireSession(): Promise<SessaoAtual> {
-  const session = await auth();
-  if (!session?.user) throw new AcessoNegadoError("Não autenticado");
-
-  const existe = await prisma.user.findUnique({ where: { id: session.user.id }, select: { ativo: true } });
-  if (!existe) throw new SessaoInvalidaError();
-  if (!existe.ativo) throw new SessaoInvalidaError("Seu acesso foi desativado. Fale com a equipe do CTP.");
-
-  return session.user as SessaoAtual;
+  const r = await carregarSessao();
+  if (!r) throw new AcessoNegadoError("Não autenticado");
+  if ("invalida" in r) {
+    throw new SessaoInvalidaError(r.invalida === "desativado" ? "Seu acesso foi desativado. Fale com a equipe do CTP." : undefined);
+  }
+  return r.sessao;
 }
 
 /** Exige usuário interno (CTP). Memorandos e telas administrativas nunca são vistos por externos. */
@@ -65,11 +101,17 @@ export async function requireInterno(): Promise<SessaoAtual> {
   return user;
 }
 
-/** Exige perfil Gestor (aprovações, dashboard, reabertura de etapas/memorandos). */
-export async function requireGestor(): Promise<SessaoAtual> {
-  const user = await requireInterno();
-  if (user.perfilInterno !== "GESTOR") throw new AcessoNegadoError("Restrito a Gestores");
+/** Exige uma permissão do perfil (Cadastros › Perfis). */
+export async function exigirPermissao(permissao: Permissao): Promise<SessaoAtual> {
+  const user = await requireSession();
+  exigir(user, permissao);
   return user;
+}
+
+export function exigir(user: SessaoAtual, permissao: Permissao) {
+  if (!pode(user, permissao)) {
+    throw new AcessoNegadoError(`Seu perfil (${user.perfilNome}) não permite: ${PERMISSOES[permissao].rotulo.toLowerCase()}.`);
+  }
 }
 
 /**
