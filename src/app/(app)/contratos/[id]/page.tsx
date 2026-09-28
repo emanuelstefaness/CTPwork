@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/tenant";
 import { assertAcessoContratante } from "@/lib/tenant";
-import { ETAPAS_CONTRATO, ETAPA_CONTRATO_FINAL } from "@/lib/constants";
+import { garantirEtapasDosContratos, progressoDoContrato } from "@/lib/fluxo-contrato";
 import { assinarContratoSeguro, criarProjetoDoContratoSeguro } from "@/lib/actions/formularios";
 import { FormSeguro } from "@/components/form-seguro";
 import { formatarDataHora, formatarDiaDoEvento, formatarRelativo } from "@/lib/formatters";
@@ -32,11 +32,14 @@ export default async function ContratoDetailPage({ params }: { params: Promise<{
   const user = await requireSession();
   const isInterno = user.tipo === "INTERNO";
 
+  await garantirEtapasDosContratos([id]);
   const contrato = await prisma.contrato.findUnique({
     where: { id },
     include: {
       contratante: true,
       responsavel: true,
+      fluxo: { select: { nome: true } },
+      etapas: { orderBy: { ordem: "asc" }, include: { concluidaPor: { select: { nome: true } } } },
       fluxoAssinatura: { include: { signatarios: { include: { user: true }, orderBy: { createdAt: "asc" } } } },
       projetos: true,
       anexos: { orderBy: { createdAt: "asc" } },
@@ -45,12 +48,12 @@ export default async function ContratoDetailPage({ params }: { params: Promise<{
   if (!contrato) notFound();
   assertAcessoContratante(user, contrato.contratanteId);
 
-  const idxAtual = ETAPAS_CONTRATO.findIndex((e) => e.chave === contrato.etapaAtual);
-  const naEtapaAssinatura = contrato.etapaAtual === "TERMO_REFERENCIA_MINUTA";
-  const naEtapaFinal = contrato.etapaAtual === ETAPA_CONTRATO_FINAL;
-  const podeCriarProjeto = naEtapaFinal && !!contrato.fluxoAssinatura?.concluido && contrato.projetos.length === 0;
-  const proximaEtapa = idxAtual < ETAPAS_CONTRATO.length - 1 ? ETAPAS_CONTRATO[idxAtual + 1] : null;
-  const avancoBloqueadoPorAssinatura = proximaEtapa?.chave === "TERMO_REFERENCIA_ASSINADO" && !contrato.fluxoAssinatura?.concluido;
+  // Tudo vem do fluxo do próprio contrato (Cadastros › Fluxos de contrato), não de etapas fixas.
+  const { indice: idxAtual, atual: etapaAtual, proxima: proximaEtapa, concluido: naEtapaFinal, situacao, temEtapaDeAssinatura } = progressoDoContrato(contrato.etapas, contrato.etapaAtual);
+  const naEtapaAssinatura = !!etapaAtual?.exigeAssinaturas;
+  const assinaturasOk = !temEtapaDeAssinatura || !!contrato.fluxoAssinatura?.concluido;
+  const podeCriarProjeto = !!etapaAtual?.liberaProjeto && assinaturasOk && contrato.projetos.length === 0;
+  const avancoBloqueadoPorAssinatura = naEtapaAssinatura && !contrato.fluxoAssinatura?.concluido;
 
   const usuariosInternos = isInterno ? await prisma.user.findMany({ where: { tipo: "INTERNO", ativo: true }, orderBy: { nome: "asc" } }) : [];
   const tiposProjeto = isInterno ? await prisma.tipoProjetoModelo.findMany({ include: { _count: { select: { etapas: true } } }, orderBy: { nome: "asc" } }) : [];
@@ -61,7 +64,10 @@ export default async function ContratoDetailPage({ params }: { params: Promise<{
     user.tipo === "EXTERNO" ? s.tipo === "EXTERNO" : s.userId === user.id
   );
   const tags = contrato.tags ? (JSON.parse(contrato.tags) as string[]) : [];
-  const statusGeral = naEtapaFinal ? { label: "Assinado", tone: "emerald" as const } : naEtapaAssinatura ? { label: "Em assinatura", tone: "amber" as const } : { label: "Em andamento", tone: "blue" as const };
+  const statusGeral =
+    situacao === "concluido" ? { label: etapaAtual?.curto ?? "Concluído", tone: "emerald" as const }
+    : situacao === "assinatura" ? { label: "Em assinatura", tone: "amber" as const }
+    : { label: "Em andamento", tone: "blue" as const };
 
   return (
     <div className="mx-auto max-w-[1300px]">
@@ -86,12 +92,17 @@ export default async function ContratoDetailPage({ params }: { params: Promise<{
 
       {/* Stepper conectado: concluídas em verde, atual em destaque, futuras em cinza. */}
       <div className="surface-panel mb-6 overflow-x-auto px-6 py-5">
-        <ol className="flex min-w-[640px] items-start">
-          {ETAPAS_CONTRATO.map((etapa, i) => {
+        {contrato.fluxo && <p className="mb-4 text-xs font-medium text-slate-500">Tipo de contrato: <span className="font-semibold text-slate-700">{contrato.fluxo.nome}</span></p>}
+        <ol className="flex items-start" style={{ minWidth: `${Math.max(480, contrato.etapas.length * 110)}px` }}>
+          {contrato.etapas.map((etapa, i) => {
             const feita = i < idxAtual || (naEtapaFinal && i === idxAtual);
             const atual = i === idxAtual && !naEtapaFinal;
             return (
-              <li key={etapa.chave} className="relative flex flex-1 flex-col items-center text-center">
+              <li
+                key={etapa.chave}
+                className="relative flex flex-1 flex-col items-center text-center"
+                title={etapa.concluidaEm ? `Concluída em ${formatarDataHora(etapa.concluidaEm)}${etapa.concluidaPor ? ` por ${etapa.concluidaPor.nome}` : ""}` : undefined}
+              >
                 {i > 0 && <span className={`absolute right-1/2 top-4 h-0.5 w-full -translate-y-1/2 ${i <= idxAtual ? "bg-emerald-400" : "bg-slate-200"}`} />}
                 <span
                   className={`relative z-10 grid h-8 w-8 place-items-center rounded-full text-xs font-bold ring-4 ring-white ${
@@ -102,6 +113,11 @@ export default async function ContratoDetailPage({ params }: { params: Promise<{
                 </span>
                 <span className={`mt-2 px-1 text-xs font-semibold ${atual ? "text-cyan-800" : feita ? "text-slate-700" : "text-slate-400"}`}>{etapa.curto}</span>
                 <span className="mt-0.5 hidden px-2 text-[10px] leading-4 text-slate-400 md:block">{etapa.nome}</span>
+                {etapa.concluidaEm && (
+                  <span className="mt-1 hidden px-1 text-[10px] leading-4 text-emerald-700 md:block">
+                    {formatarDiaDoEvento(etapa.concluidaEm)}{etapa.concluidaPor ? ` · ${etapa.concluidaPor.nome.split(" ")[0]}` : ""}
+                  </span>
+                )}
               </li>
             );
           })}
@@ -111,13 +127,13 @@ export default async function ContratoDetailPage({ params }: { params: Promise<{
       <div className="grid grid-cols-[minmax(0,1fr)] gap-5 lg:grid-cols-[minmax(0,1fr)_340px]">
         <div className="flex flex-col gap-5">
           {isInterno && proximaEtapa && (
-            <Panel title="Próxima etapa" description={`Etapa atual: ${ETAPAS_CONTRATO[idxAtual]?.nome}`}>
+            <Panel title="Próxima etapa" description={`Etapa atual: ${etapaAtual?.nome}`}>
               <div className="px-5 py-4">
                 <AvancarEtapaForm
                   contratoId={contrato.id}
                   proximaEtapaNome={proximaEtapa.curto}
                   bloqueado={avancoBloqueadoPorAssinatura}
-                  motivoBloqueio={avancoBloqueadoPorAssinatura ? "Todas as assinaturas da minuta precisam ser coletadas antes de avançar." : undefined}
+                  motivoBloqueio={avancoBloqueadoPorAssinatura ? `A etapa "${etapaAtual?.nome}" exige todas as assinaturas antes de avançar.` : undefined}
                 />
               </div>
             </Panel>
@@ -172,7 +188,7 @@ export default async function ContratoDetailPage({ params }: { params: Promise<{
           )}
 
           {podeCriarProjeto && isInterno && (
-            <Panel title="Criar projeto técnico" description="Contrato assinado. Gere o projeto com o fluxo de etapas do tipo escolhido.">
+            <Panel title="Criar projeto técnico" description="O contrato chegou à etapa que libera o projeto. Gere o projeto com o fluxo de etapas do tipo escolhido.">
               <FormSeguro acao={criarProjetoDoContratoSeguro} limparAoEnviar={false} className="grid gap-4 px-5 py-5 sm:grid-cols-3" erroClassName="flex items-center gap-1.5 text-sm text-red-600 sm:col-span-3">
                 <input type="hidden" name="contratoId" value={contrato.id} />
                 <label className="block">
@@ -233,7 +249,8 @@ export default async function ContratoDetailPage({ params }: { params: Promise<{
               items={[
                 { label: "Município", value: contrato.contratante.nome },
                 { label: "Responsável", value: <span className="inline-flex items-center gap-2"><Avatar name={contrato.responsavel.nome} size="sm" />{contrato.responsavel.nome}</span> },
-                { label: "Etapa", value: `${idxAtual + 1} de ${ETAPAS_CONTRATO.length}` },
+                { label: "Tipo", value: contrato.fluxo?.nome ?? "—" },
+                { label: "Etapa", value: `${idxAtual + 1} de ${contrato.etapas.length}` },
                 { label: "Aberto em", value: formatarDiaDoEvento(contrato.createdAt) },
                 { label: "Projeto", value: contrato.projetos[0] ? <Link href={`/projetos/${contrato.projetos[0].id}`} className="text-cyan-700 hover:underline">{contrato.projetos[0].codigo}</Link> : <span className="text-slate-400">Ainda não criado</span> },
               ]}

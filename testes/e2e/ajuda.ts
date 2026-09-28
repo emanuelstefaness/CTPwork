@@ -20,9 +20,16 @@ export const MUNICIPIO = {
  * limpa os cookies.
  */
 export async function entrar(page: Page, email: string, senha = SENHA) {
-  await page.goto("about:blank");
-  await page.context().clearCookies();
-  await page.goto("/login");
+  // Às vezes uma resposta atrasada da página anterior ainda regrava o cookie depois da limpeza:
+  // se /login redirecionar para dentro do sistema, limpa de novo e tenta outra vez.
+  for (let tentativa = 0; tentativa < 4; tentativa++) {
+    await page.goto("about:blank");
+    await page.context().clearCookies();
+    await page.goto("/login");
+    if (new URL(page.url()).pathname === "/login") break;
+    await page.waitForTimeout(500);
+  }
+  await expect(page).toHaveURL(/\/login/);
   await page.getByLabel("E-mail").fill(email);
   await page.getByLabel("Senha", { exact: true }).fill(senha);
   await page.getByRole("button", { name: "Entrar" }).click();

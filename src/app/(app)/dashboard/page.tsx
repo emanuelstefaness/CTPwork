@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { requireInterno } from "@/lib/tenant";
-import { ETAPAS_CONTRATO, STATUS_ETAPA_LABEL } from "@/lib/constants";
+import { STATUS_ETAPA_LABEL } from "@/lib/constants";
+import { garantirEtapasDosContratos, progressoDoContrato } from "@/lib/fluxo-contrato";
 import { ENTIDADE_LABEL, formatarData, formatarRelativo } from "@/lib/formatters";
 import type { Metadata } from "next";
 import { inicioDoDiaUTC } from "@/lib/prazos";
@@ -69,11 +70,13 @@ function Kpi({ title, value, detail, tone, icon: Icon }: { title: string; value:
 export default async function DashboardPage() {
   await requireInterno();
 
+  await garantirEtapasDosContratos((await prisma.contrato.findMany({ where: { etapas: { none: {} } }, select: { id: true } })).map((c) => c.id));
   const now = new Date();
   const criticalLimit = new Date(now.getTime() + 1000 * 60 * 60 * 24 * 15);
   const [etapasPorStatus, contratosPorEtapa, projetosAtivos, memorandosAbertos, assinaturasPendentes, prazos, atividades, criticos] = await Promise.all([
     prisma.etapaProjeto.groupBy({ by: ["status"], _count: true }),
-    prisma.contrato.groupBy({ by: ["etapaAtual"], _count: true }),
+    // Etapa atual de cada contrato, com a posição dela no fluxo do próprio contrato.
+    prisma.contrato.findMany({ select: { etapaAtual: true, etapas: { select: { chave: true, curto: true, ordem: true, exigeAssinaturas: true, liberaProjeto: true }, orderBy: { ordem: "asc" } } } }),
     prisma.projeto.count(),
     prisma.memorando.count({ where: { status: { in: ["ABERTO", "EM_EXECUCAO"] } } }),
     prisma.signatario.count({ where: { status: "PENDENTE" } }),
@@ -92,8 +95,20 @@ export default async function DashboardPage() {
   const barData = ["NAO_INICIADA", "EM_ANDAMENTO", "AGUARDANDO_MUNICIPIO", "CONCLUIDA"].map((status) => ({
     name: STATUS_ETAPA_LABEL[status], value: etapasPorStatus.find((e) => e.status === status)?._count ?? 0, color: corStatus[status],
   }));
-  const corEtapaContrato = ["#cbd5e1", "#93c5fd", "#3b82f6", "#06b6d4", "#f59e0b", "#10b981"];
-  const donutData = ETAPAS_CONTRATO.map((etapa, i) => ({ name: etapa.curto, color: corEtapaContrato[i], value: contratosPorEtapa.find((c) => c.etapaAtual === etapa.chave)?._count ?? 0 })).filter((d) => d.value > 0);
+  // Fluxos diferentes têm etapas diferentes: agrupa pelo nome curto da etapa atual, na ordem em que
+  // aparecem nos fluxos; concluídos em verde, em assinatura em âmbar, demais em tons de azul.
+  const porEtapa = new Map<string, { value: number; ordem: number; situacao: string }>();
+  for (const c of contratosPorEtapa) {
+    const p = progressoDoContrato(c.etapas, c.etapaAtual);
+    if (!p.atual) continue;
+    const item = porEtapa.get(p.atual.curto) ?? { value: 0, ordem: p.indice, situacao: p.situacao };
+    item.value++;
+    porEtapa.set(p.atual.curto, item);
+  }
+  const azuis = ["#cbd5e1", "#93c5fd", "#3b82f6", "#06b6d4", "#0891b2", "#6366f1"];
+  const donutData = [...porEtapa.entries()]
+    .sort((a, b) => a[1].ordem - b[1].ordem)
+    .map(([name, d], i) => ({ name, value: d.value, color: d.situacao === "concluido" ? "#10b981" : d.situacao === "assinatura" ? "#f59e0b" : azuis[i % azuis.length] }));
 
   return (
     <div className="mx-auto max-w-[1500px]">

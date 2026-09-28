@@ -129,6 +129,22 @@ existindo para o assunto da etapa.
   no próximo clique; sai das listas de escolha e dos avisos, mas o histórico (comentários,
   assinaturas, mensagens, auditoria) fica. Reativável. Ninguém desativa a si mesmo nem o último gestor.
 
+## Fluxos de contrato (tipos de contrato)
+
+Em **Cadastros › Fluxos de contrato** o gestor cria tipos de contrato (ex.: Padrão, Dispensa de
+licitação, Termo aditivo), cada um com as próprias etapas, na ordem:
+
+- **Exige assinaturas** (no máximo uma por tipo): ali se abre a coleta de assinaturas, e o contrato
+  só avança com todas coletadas.
+- **Libera o projeto**: a partir dessa etapa dá para criar o projeto técnico (um tipo sem ela não
+  gera projeto — útil para aditivos).
+- A última etapa é o estado final ("concluído").
+
+Ao criar um contrato escolhe-se o tipo; as etapas são **copiadas** para o contrato (`EtapaContrato`),
+então editar o tipo depois não mexe nos contratos em andamento. Cada etapa guarda quem a concluiu e
+quando (aparece no stepper). Tipos não são apagados, só desativados. Contratos anteriores a esta
+função seguem o tipo **Padrão** (as 6 etapas originais). Lógica comum em `src/lib/fluxo-contrato.ts`.
+
 ## Segurança HTTP
 
 - `next.config.ts`: `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy`,

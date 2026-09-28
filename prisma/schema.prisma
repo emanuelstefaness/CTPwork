@@ -66,6 +66,7 @@ model User {
   anotacoesResolvidas  AnotacaoDocumento[] @relation("AnotacaoResolvidaPor")
   respostasAnotacao    RespostaAnotacao[]
   contratosResponsavel Contrato[]       @relation("ContratoResponsavel")
+  etapasContratoConcluidas EtapaContrato[] @relation("EtapaContratoConcluidaPor")
   projetosResponsavel  Projeto[]        @relation("ProjetoResponsavel")
   etapasResponsavel    EtapaProjeto[]   @relation("EtapaResponsavel")
   revisoes             UnidadeRevisao[]
@@ -141,7 +142,11 @@ model Contrato {
   objeto        String
   contratanteId String
   contratante   Municipio @relation(fields: [contratanteId], references: [id])
-  etapaAtual    String    // chave da etapa dentro da máquina de estado (seção 6.2)
+  etapaAtual    String    // chave da etapa atual — uma das EtapaContrato deste contrato
+  // Tipo de contrato (fluxo de etapas configurável). As etapas são copiadas para EtapaContrato na
+  // criação: editar o fluxo depois não mexe nos contratos em andamento.
+  fluxoId       String?
+  fluxo         FluxoContrato? @relation(fields: [fluxoId], references: [id])
   responsavelId String
   responsavel   User      @relation("ContratoResponsavel", fields: [responsavelId], references: [id])
   tags          String?   // JSON string[]
@@ -152,6 +157,61 @@ model Contrato {
   fluxoAssinatura FluxoAssinatura?
   projetos        Projeto[]
   conversas       Conversa[]
+  etapas          EtapaContrato[]
+}
+
+// ---------- Fluxos de contrato configuráveis ----------
+// Tipos de contrato (ex.: "Dispensa de licitação", "Termo aditivo") com as etapas de cada um,
+// montados pelo gestor em Cadastros › Fluxos de contrato.
+//   exigeAssinaturas: nesta etapa abre-se o fluxo de assinatura, e só se avança com todas coletadas.
+//   liberaProjeto:    a partir desta etapa o projeto técnico pode ser criado.
+// A última etapa do fluxo é o estado final do contrato ("concluído").
+
+model FluxoContrato {
+  id        String   @id @default(cuid())
+  nome      String   @unique
+  descricao String?
+  ativo     Boolean  @default(true) // inativo: não aparece para contratos novos
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  etapas    EtapaFluxoContrato[]
+  contratos Contrato[]
+}
+
+model EtapaFluxoContrato {
+  id               String        @id @default(cuid())
+  fluxoId          String
+  fluxo            FluxoContrato @relation(fields: [fluxoId], references: [id], onDelete: Cascade)
+  ordem            Int
+  chave            String
+  nome             String
+  curto            String
+  exigeAssinaturas Boolean       @default(false)
+  liberaProjeto    Boolean       @default(false)
+  createdAt        DateTime      @default(now())
+
+  @@unique([fluxoId, chave])
+  @@index([fluxoId, ordem])
+}
+
+// Etapas copiadas para o contrato, com o histórico de quem concluiu cada uma e quando.
+model EtapaContrato {
+  id               String    @id @default(cuid())
+  contratoId       String
+  contrato         Contrato  @relation(fields: [contratoId], references: [id], onDelete: Cascade)
+  ordem            Int
+  chave            String
+  nome             String
+  curto            String
+  exigeAssinaturas Boolean   @default(false)
+  liberaProjeto    Boolean   @default(false)
+  concluidaEm      DateTime?
+  concluidaPorId   String?
+  concluidaPor     User?     @relation("EtapaContratoConcluidaPor", fields: [concluidaPorId], references: [id])
+
+  @@unique([contratoId, chave])
+  @@index([contratoId, ordem])
 }
 
 // ---------- 5.3 Projeto ----------

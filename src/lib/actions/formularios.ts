@@ -9,7 +9,8 @@ import {
 } from "./etapas";
 import { criarEventoCronograma, removerEventoCronograma } from "./cronograma";
 import {
-  alterarAcessoUsuario, atualizarEtapaModelo, atualizarModeloFormulario, atualizarMunicipio, atualizarUsuario, criarEtapaModelo,
+  alterarAcessoUsuario, alternarFluxoContrato, atualizarEtapaFluxoContrato, atualizarFluxoContrato, criarEtapaFluxoContrato,
+  criarFluxoContrato, moverEtapaFluxoContrato, removerEtapaFluxoContrato, atualizarEtapaModelo, atualizarModeloFormulario, atualizarMunicipio, atualizarUsuario, criarEtapaModelo,
   criarModeloFormulario, criarMunicipio, criarSetor, criarTipoProjeto, criarUsuario, renomearSetor, renomearTipoProjeto,
 } from "./cadastros";
 
@@ -161,6 +162,36 @@ export async function criarTipoProjetoSeguro(formData: FormData): R {
 
 export async function renomearTipoProjetoSeguro(formData: FormData): R {
   return capturar(() => renomearTipoProjeto(formData));
+}
+
+/* ── Fluxos de contrato ── */
+
+export async function criarFluxoContratoSeguro(formData: FormData): R {
+  return capturar(() => criarFluxoContrato(formData));
+}
+
+export async function atualizarFluxoContratoSeguro(formData: FormData): R {
+  return capturar(() => atualizarFluxoContrato(formData));
+}
+
+export async function alternarFluxoContratoSeguro(formData: FormData): R {
+  return capturar(() => alternarFluxoContrato(campo(formData, "fluxoId"), campo(formData, "ativo") === "true"));
+}
+
+export async function criarEtapaFluxoContratoSeguro(formData: FormData): R {
+  return capturar(() => criarEtapaFluxoContrato(formData));
+}
+
+export async function atualizarEtapaFluxoContratoSeguro(formData: FormData): R {
+  return capturar(() => atualizarEtapaFluxoContrato(formData));
+}
+
+export async function removerEtapaFluxoContratoSeguro(formData: FormData): R {
+  return capturar(() => removerEtapaFluxoContrato(campo(formData, "etapaId")));
+}
+
+export async function moverEtapaFluxoContratoSeguro(formData: FormData): R {
+  return capturar(() => moverEtapaFluxoContrato(campo(formData, "etapaId"), campo(formData, "direcao") === "up" ? "up" : "down"));
 }
 
 export async function alterarAcessoUsuarioSeguro(formData: FormData): R {

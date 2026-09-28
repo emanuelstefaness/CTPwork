@@ -5,7 +5,7 @@ import { requireInterno, requireSession, assertAcessoContratante } from "@/lib/t
 import { registrarAuditoria } from "@/lib/audit";
 import { gerarCodigoContrato, gerarCodigoProjeto } from "@/lib/codigos";
 import { getSignatureProvider } from "@/lib/signature/provider";
-import { ETAPAS_CONTRATO, ETAPA_CONTRATO_FINAL } from "@/lib/constants";
+import { FLUXO_PADRAO_ID, garantirEtapasDosContratos, progressoDoContrato } from "@/lib/fluxo-contrato";
 import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
@@ -24,6 +24,12 @@ export async function criarContrato(formData: FormData) {
   if (!objeto) throw new Error("Objeto do contrato é obrigatório.");
   if (!contratanteId) throw new Error("Contratante é obrigatório.");
 
+  // Tipo de contrato: as etapas do fluxo escolhido são copiadas para o contrato.
+  const fluxoId = String(formData.get("fluxoId") ?? "") || FLUXO_PADRAO_ID;
+  const fluxo = await prisma.fluxoContrato.findUnique({ where: { id: fluxoId }, include: { etapas: { orderBy: { ordem: "asc" } } } });
+  if (!fluxo || !fluxo.ativo) throw new Error("Escolha um tipo de contrato ativo.");
+  if (fluxo.etapas.length < 2) throw new Error(`O tipo "${fluxo.nome}" precisa de pelo menos 2 etapas. Complete-o em Cadastros › Fluxos de contrato.`);
+
   const codigo = await gerarCodigoContrato();
 
   const contrato = await prisma.contrato.create({
@@ -32,49 +38,70 @@ export async function criarContrato(formData: FormData) {
       objeto,
       contratanteId,
       responsavelId,
-      etapaAtual: ETAPAS_CONTRATO[0].chave,
+      fluxoId: fluxo.id,
+      etapaAtual: fluxo.etapas[0].chave,
       tags: tags.length ? JSON.stringify(tags) : null,
+      etapas: {
+        create: fluxo.etapas.map((e) => ({
+          ordem: e.ordem,
+          chave: e.chave,
+          nome: e.nome,
+          curto: e.curto,
+          exigeAssinaturas: e.exigeAssinaturas,
+          liberaProjeto: e.liberaProjeto,
+        })),
+      },
     },
   });
 
-  await registrarAuditoria({ userId: user.id, acao: "CRIAR", entidadeTipo: "Contrato", entidadeId: contrato.id });
+  await registrarAuditoria({ userId: user.id, acao: "CRIAR", entidadeTipo: "Contrato", entidadeId: contrato.id, detalhe: fluxo.nome });
   revalidatePath("/contratos");
   redirect(`/contratos/${contrato.id}`);
 }
 
-/** Regra 10.1: não avança sem os campos obrigatórios da etapa atual (aqui: exige exit-signature na etapa de assinatura). */
+/** Carrega o contrato com as etapas do seu fluxo (copiando-as, se ainda não tiver). */
+async function contratoComEtapas(contratoId: string) {
+  await garantirEtapasDosContratos([contratoId]);
+  const contrato = await prisma.contrato.findUnique({
+    where: { id: contratoId },
+    include: { fluxoAssinatura: true, etapas: { orderBy: { ordem: "asc" } } },
+  });
+  if (!contrato) throw new Error("Contrato não encontrado.");
+  return { contrato, ...progressoDoContrato(contrato.etapas, contrato.etapaAtual) };
+}
+
+/**
+ * Regra 10.1: avança para a próxima etapa do fluxo do contrato. Uma etapa que exige assinaturas
+ * só é deixada para trás com todas coletadas. Grava quem concluiu a etapa e quando.
+ */
 export async function avancarEtapaContrato(contratoId: string) {
   const user = await requireInterno();
-  const contrato = await prisma.contrato.findUniqueOrThrow({
-    where: { id: contratoId },
-    include: { fluxoAssinatura: true },
-  });
+  const { contrato, atual, proxima } = await contratoComEtapas(contratoId);
+  if (!proxima) throw new Error("O contrato já está na última etapa do fluxo.");
 
-  const idxAtual = ETAPAS_CONTRATO.findIndex((e) => e.chave === contrato.etapaAtual);
-  if (idxAtual === -1 || idxAtual === ETAPAS_CONTRATO.length - 1) {
-    throw new Error("Contrato já está na última etapa.");
+  if (atual.exigeAssinaturas && !contrato.fluxoAssinatura?.concluido) {
+    throw new Error(`A etapa "${atual.nome}" exige todas as assinaturas antes de avançar.`);
   }
 
-  const proxima = ETAPAS_CONTRATO[idxAtual + 1];
-
-  // Etapa de assinatura: só avança para "assinado" se o fluxo estiver 100% concluído.
-  if (proxima.chave === "TERMO_REFERENCIA_ASSINADO" && !contrato.fluxoAssinatura?.concluido) {
-    throw new Error("A minuta do termo de referência precisa estar 100% assinada para avançar.");
-  }
-
-  await prisma.contrato.update({ where: { id: contratoId }, data: { etapaAtual: proxima.chave } });
+  await prisma.$transaction([
+    prisma.etapaContrato.update({ where: { id: atual.id }, data: { concluidaEm: new Date(), concluidaPorId: user.id } }),
+    prisma.contrato.update({ where: { id: contratoId }, data: { etapaAtual: proxima.chave } }),
+  ]);
   await registrarAuditoria({
     userId: user.id,
     acao: "AVANCAR_ETAPA",
     entidadeTipo: "Contrato",
     entidadeId: contratoId,
-    detalhe: proxima.chave,
+    detalhe: proxima.nome,
   });
   revalidatePath(`/contratos/${contratoId}`);
 }
 
 export async function criarFluxoAssinaturaContrato(contratoId: string, signatarios: { userId?: string; nomeExterno?: string; tipo: string }[]) {
   const user = await requireInterno();
+  const { contrato, atual } = await contratoComEtapas(contratoId);
+  if (!atual.exigeAssinaturas) throw new Error("A coleta de assinaturas é aberta na etapa do fluxo que exige assinaturas.");
+  if (contrato.fluxoAssinatura) throw new Error("Este contrato já tem um fluxo de assinatura aberto.");
   await prisma.fluxoAssinatura.create({
     data: {
       contratoId,
@@ -155,13 +182,14 @@ export async function criarProjetoDoContrato(formData: FormData) {
   const dataVigencia = String(formData.get("dataVigencia"));
   const responsavelId = String(formData.get("responsavelId") ?? user.id);
 
-  const contrato = await prisma.contrato.findUniqueOrThrow({
-    where: { id: contratoId },
-    include: { fluxoAssinatura: true, anexos: true },
-  });
+  const { contrato: base, atual, temEtapaDeAssinatura } = await contratoComEtapas(contratoId);
+  const contrato = { ...base, anexos: await prisma.anexo.findMany({ where: { contratoId } }) };
 
-  if (contrato.etapaAtual !== ETAPA_CONTRATO_FINAL || !contrato.fluxoAssinatura?.concluido) {
-    throw new Error('Só é possível criar o projeto quando "Contrato e termo de referência" estiver 100% assinado.');
+  if (!atual.liberaProjeto) {
+    throw new Error(`O projeto só pode ser criado na etapa do fluxo que libera o projeto (o contrato está em "${atual.nome}").`);
+  }
+  if (temEtapaDeAssinatura && !contrato.fluxoAssinatura?.concluido) {
+    throw new Error("O contrato precisa estar com todas as assinaturas coletadas para criar o projeto.");
   }
   if (!tipo || !dataVigencia) throw new Error("Tipo do projeto e data de vigência são obrigatórios.");
 

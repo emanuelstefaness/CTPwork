@@ -58,8 +58,9 @@ export const STATUS_REVISAO_UNIDADE = {
 
 export const STATUS_SIGNATARIO = { PENDENTE: "PENDENTE", ASSINADO: "ASSINADO" } as const;
 
-// Máquina de estado do Contrato (seção 6.2) — a etapa É o estado.
-// `curto` é o rótulo de stepper/badge, onde o nome completo não cabe.
+// Etapas do fluxo de contrato "Padrão". As etapas de contrato agora são configuráveis
+// (FluxoContrato, em Cadastros › Fluxos de contrato; ver src/lib/fluxo-contrato.ts) — esta lista só
+// é usada pelos seeds, e é a mesma que a migração 20260925145309_fluxos_de_contrato gravou no banco.
 export const ETAPAS_CONTRATO = [
   { chave: "PEDIDO_ORCAMENTO", nome: "Pedido de orçamento", curto: "Pedido" },
   { chave: "EMISSAO_ORCAMENTO", nome: "Emissão de orçamento", curto: "Orçamento" },

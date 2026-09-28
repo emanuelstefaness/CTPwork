@@ -6,6 +6,7 @@ import { requireGestor } from "@/lib/tenant";
 import { registrarAuditoria } from "@/lib/audit";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { chaveDaEtapa } from "@/lib/fluxo-contrato";
 
 /** Cadastros de apoio (seção 5.7 do prompt mestre) — restritos a Gestor CTP. */
 
@@ -199,6 +200,127 @@ export async function atualizarModeloFormulario(formData: FormData) {
 
   await prisma.modeloFormulario.update({ where: { id: modeloId }, data: { nome, campos: JSON.stringify(campos) } });
   await registrarAuditoria({ userId: user.id, acao: "ATUALIZAR", entidadeTipo: "ModeloFormulario", entidadeId: modeloId, detalhe: nome });
+  revalidatePath("/cadastros");
+}
+
+// ---------- Fluxos de contrato (tipos de contrato + etapas configuráveis) ----------
+// Como nos fluxos de projeto: editar um tipo só vale para contratos criados depois — os que já
+// existem têm a própria cópia das etapas (EtapaContrato). Tipos não são apagados, só desativados,
+// porque há contratos ligados a eles.
+
+function lerEtapaContrato(formData: FormData) {
+  const nome = String(formData.get("nome") ?? "").trim().slice(0, 120);
+  const curto = String(formData.get("curto") ?? "").trim().slice(0, 24) || nome.slice(0, 24);
+  return {
+    nome,
+    curto,
+    exigeAssinaturas: formData.get("exigeAssinaturas") === "on",
+    liberaProjeto: formData.get("liberaProjeto") === "on",
+  };
+}
+
+async function validarAssinaturaUnica(fluxoId: string, exigeAssinaturas: boolean, ignorarEtapaId?: string) {
+  if (!exigeAssinaturas) return;
+  const outra = await prisma.etapaFluxoContrato.findFirst({ where: { fluxoId, exigeAssinaturas: true, ...(ignorarEtapaId ? { id: { not: ignorarEtapaId } } : {}) } });
+  if (outra) throw new Error(`A etapa "${outra.nome}" já é a de assinaturas. Cada tipo de contrato tem uma só.`);
+}
+
+export async function criarFluxoContrato(formData: FormData) {
+  const user = await requireGestor();
+  const nome = String(formData.get("nome") ?? "").trim().slice(0, 80);
+  const baseId = String(formData.get("baseId") ?? "");
+  if (!nome) throw new Error("Dê um nome ao tipo de contrato.");
+  if (await prisma.fluxoContrato.findUnique({ where: { nome } })) throw new Error(`Já existe um tipo de contrato chamado "${nome}".`);
+
+  // Pode nascer como cópia de outro tipo (ex.: partir do Padrão e ajustar).
+  const base = baseId ? await prisma.fluxoContrato.findUnique({ where: { id: baseId }, include: { etapas: { orderBy: { ordem: "asc" } } } }) : null;
+  const fluxo = await prisma.fluxoContrato.create({
+    data: {
+      nome,
+      descricao: base?.descricao ?? null,
+      etapas: base ? { create: base.etapas.map(({ ordem, chave, nome, curto, exigeAssinaturas, liberaProjeto }) => ({ ordem, chave, nome, curto, exigeAssinaturas, liberaProjeto })) } : undefined,
+    },
+  });
+  await registrarAuditoria({ userId: user.id, acao: "CRIAR", entidadeTipo: "FluxoContrato", entidadeId: fluxo.id, detalhe: base ? `${nome} (cópia de ${base.nome})` : nome });
+  revalidatePath("/cadastros");
+  redirect(`/cadastros?aba=fluxos-contrato&fluxo=${fluxo.id}`);
+}
+
+export async function atualizarFluxoContrato(formData: FormData) {
+  const user = await requireGestor();
+  const fluxoId = String(formData.get("fluxoId"));
+  const nome = String(formData.get("nome") ?? "").trim().slice(0, 80);
+  const descricao = String(formData.get("descricao") ?? "").trim().slice(0, 300) || null;
+  if (!nome) throw new Error("Dê um nome ao tipo de contrato.");
+  const mesmoNome = await prisma.fluxoContrato.findUnique({ where: { nome } });
+  if (mesmoNome && mesmoNome.id !== fluxoId) throw new Error(`Já existe um tipo de contrato chamado "${nome}".`);
+  await prisma.fluxoContrato.update({ where: { id: fluxoId }, data: { nome, descricao } });
+  await registrarAuditoria({ userId: user.id, acao: "ATUALIZAR", entidadeTipo: "FluxoContrato", entidadeId: fluxoId, detalhe: nome });
+  revalidatePath("/cadastros");
+}
+
+export async function alternarFluxoContrato(fluxoId: string, ativo: boolean) {
+  const user = await requireGestor();
+  if (!ativo) {
+    const outrosUtilizaveis = await prisma.fluxoContrato.count({ where: { ativo: true, id: { not: fluxoId }, etapas: { some: { ordem: { gte: 1 } } } } });
+    if (outrosUtilizaveis === 0) throw new Error("Este é o único tipo de contrato em uso. Crie ou ative outro antes de desativá-lo.");
+  }
+  await prisma.fluxoContrato.update({ where: { id: fluxoId }, data: { ativo } });
+  await registrarAuditoria({ userId: user.id, acao: ativo ? "ATIVAR" : "DESATIVAR", entidadeTipo: "FluxoContrato", entidadeId: fluxoId });
+  revalidatePath("/cadastros");
+}
+
+export async function criarEtapaFluxoContrato(formData: FormData) {
+  const user = await requireGestor();
+  const fluxoId = String(formData.get("fluxoId"));
+  const dados = lerEtapaContrato(formData);
+  if (!dados.nome) throw new Error("Nome da etapa é obrigatório.");
+  await validarAssinaturaUnica(fluxoId, dados.exigeAssinaturas);
+
+  const existentes = await prisma.etapaFluxoContrato.findMany({ where: { fluxoId }, select: { chave: true, ordem: true } });
+  const base = chaveDaEtapa(dados.nome);
+  let chave = base;
+  for (let n = 2; existentes.some((e) => e.chave === chave); n++) chave = `${base}_${n}`;
+  const ordem = existentes.reduce((m, e) => Math.max(m, e.ordem), -1) + 1;
+
+  const etapa = await prisma.etapaFluxoContrato.create({ data: { fluxoId, ordem, chave, ...dados } });
+  await registrarAuditoria({ userId: user.id, acao: "CRIAR", entidadeTipo: "EtapaFluxoContrato", entidadeId: etapa.id, detalhe: dados.nome });
+  revalidatePath("/cadastros");
+}
+
+export async function atualizarEtapaFluxoContrato(formData: FormData) {
+  const user = await requireGestor();
+  const etapaId = String(formData.get("etapaId"));
+  const dados = lerEtapaContrato(formData);
+  if (!dados.nome) throw new Error("Nome da etapa é obrigatório.");
+  const etapa = await prisma.etapaFluxoContrato.findUniqueOrThrow({ where: { id: etapaId } });
+  await validarAssinaturaUnica(etapa.fluxoId, dados.exigeAssinaturas, etapaId);
+  await prisma.etapaFluxoContrato.update({ where: { id: etapaId }, data: dados });
+  await registrarAuditoria({ userId: user.id, acao: "ATUALIZAR", entidadeTipo: "EtapaFluxoContrato", entidadeId: etapaId, detalhe: dados.nome });
+  revalidatePath("/cadastros");
+}
+
+export async function removerEtapaFluxoContrato(etapaId: string) {
+  const user = await requireGestor();
+  const etapa = await prisma.etapaFluxoContrato.findUniqueOrThrow({ where: { id: etapaId } });
+  await prisma.etapaFluxoContrato.delete({ where: { id: etapaId } });
+  await registrarAuditoria({ userId: user.id, acao: "REMOVER", entidadeTipo: "EtapaFluxoContrato", entidadeId: etapaId, detalhe: etapa.nome });
+  revalidatePath("/cadastros");
+}
+
+export async function moverEtapaFluxoContrato(etapaId: string, direcao: "up" | "down") {
+  const user = await requireGestor();
+  const atual = await prisma.etapaFluxoContrato.findUniqueOrThrow({ where: { id: etapaId } });
+  const vizinha = await prisma.etapaFluxoContrato.findFirst({
+    where: { fluxoId: atual.fluxoId, ordem: direcao === "up" ? { lt: atual.ordem } : { gt: atual.ordem } },
+    orderBy: { ordem: direcao === "up" ? "desc" : "asc" },
+  });
+  if (!vizinha) return;
+  await prisma.$transaction([
+    prisma.etapaFluxoContrato.update({ where: { id: atual.id }, data: { ordem: vizinha.ordem } }),
+    prisma.etapaFluxoContrato.update({ where: { id: vizinha.id }, data: { ordem: atual.ordem } }),
+  ]);
+  await registrarAuditoria({ userId: user.id, acao: "REORDENAR", entidadeTipo: "EtapaFluxoContrato", entidadeId: etapaId });
   revalidatePath("/cadastros");
 }
 

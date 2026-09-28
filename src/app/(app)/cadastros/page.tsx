@@ -2,7 +2,9 @@ import {
   atualizarEtapaModeloSeguro, atualizarModeloFormularioSeguro, atualizarMunicipioSeguro, atualizarUsuarioSeguro,
   criarEtapaModeloSeguro, criarModeloFormularioSeguro, criarMunicipioSeguro, criarSetorSeguro, criarTipoProjetoSeguro,
   criarUsuarioSeguro, renomearSetorSeguro, renomearTipoProjetoSeguro,
+  alternarFluxoContratoSeguro, atualizarFluxoContratoSeguro, criarFluxoContratoSeguro,
 } from "@/lib/actions/formularios";
+import { EtapaFluxoContratoRow, NovaEtapaFluxoContrato } from "./EtapaFluxoContrato";
 import { FormSeguro } from "@/components/form-seguro";
 import type { Metadata } from "next";
 import Link from "next/link";
@@ -16,7 +18,7 @@ import { formatarDiaDoEvento } from "@/lib/formatters";
 import ModeloFormularioForm from "./ModeloFormularioForm";
 import EtapaModeloRow from "./EtapaModeloRow";
 import NovaEtapaModeloForm from "./NovaEtapaModeloForm";
-import { BuildingLibraryIcon, DocumentTextIcon, PlusIcon, RectangleGroupIcon, RectangleStackIcon, UsersIcon } from "@heroicons/react/24/outline";
+import { BuildingLibraryIcon, ClipboardDocumentListIcon, DocumentTextIcon, PlusIcon, RectangleGroupIcon, RectangleStackIcon, UsersIcon } from "@heroicons/react/24/outline";
 
 const ABAS = [
   { chave: "setores", label: "Setores", icon: RectangleGroupIcon },
@@ -24,6 +26,7 @@ const ABAS = [
   { chave: "municipios", label: "Municípios", icon: BuildingLibraryIcon },
   { chave: "modelos", label: "Modelos de formulário", icon: DocumentTextIcon },
   { chave: "fluxos", label: "Fluxos de projeto", icon: RectangleStackIcon },
+  { chave: "fluxos-contrato", label: "Fluxos de contrato", icon: ClipboardDocumentListIcon },
 ] as const;
 
 export const metadata: Metadata = { title: "Cadastros" };
@@ -33,14 +36,16 @@ export default async function CadastrosPage({ searchParams }: { searchParams: Pr
   const { aba: abaParam, editar, fluxo: fluxoParam } = await searchParams;
   const aba = ABAS.some((a) => a.chave === abaParam) ? abaParam! : "setores";
 
-  const [setores, municipios, usuarios, modelos, tiposProjeto] = await Promise.all([
+  const [setores, municipios, usuarios, modelos, tiposProjeto, fluxosContrato] = await Promise.all([
     prisma.setor.findMany({ orderBy: { nome: "asc" } }),
     prisma.municipio.findMany({ orderBy: { nome: "asc" } }),
     prisma.user.findMany({ include: { setor: true, municipio: true }, orderBy: { nome: "asc" } }),
     prisma.modeloFormulario.findMany({ orderBy: { nome: "asc" } }),
     prisma.tipoProjetoModelo.findMany({ include: { etapas: { orderBy: { ordem: "asc" } } }, orderBy: { nome: "asc" } }),
+    prisma.fluxoContrato.findMany({ include: { etapas: { orderBy: { ordem: "asc" } }, _count: { select: { contratos: true } } }, orderBy: [{ ativo: "desc" }, { nome: "asc" }] }),
   ]);
   const fluxoSelecionado = tiposProjeto.find((t) => t.id === fluxoParam) ?? tiposProjeto[0];
+  const fluxoContratoSel = fluxosContrato.find((f) => f.id === fluxoParam) ?? fluxosContrato[0];
 
   return (
     <div className="mx-auto max-w-[1200px]">
@@ -320,6 +325,81 @@ export default async function CadastrosPage({ searchParams }: { searchParams: Pr
                   </p>
                 )}
                 <NovaEtapaModeloForm tipoProjetoModeloId={fluxoSelecionado.id} action={criarEtapaModeloSeguro} />
+              </div>
+            </Panel>
+          )}
+        </div>
+      )}
+
+      {aba === "fluxos-contrato" && (
+        <div className="flex flex-col gap-5">
+          <Panel title="Tipos de contrato" description="Cada tipo tem as próprias etapas — ex.: Padrão, Dispensa de licitação, Termo aditivo. Mudanças valem para contratos criados depois.">
+            <div className="flex flex-col gap-4 p-5">
+              <div className="flex flex-wrap items-center gap-2">
+                {fluxosContrato.map((f) => (
+                  <Link
+                    key={f.id}
+                    href={`/cadastros?aba=fluxos-contrato&fluxo=${f.id}`}
+                    className={`flex items-center gap-2 rounded-xl border px-3.5 py-2 text-xs font-semibold transition-colors ${
+                      fluxoContratoSel?.id === f.id ? "border-cyan-400 bg-cyan-50 text-cyan-700" : "border-slate-200 text-slate-600 hover:border-cyan-200 hover:bg-cyan-50/50"
+                    } ${f.ativo ? "" : "opacity-60"}`}
+                  >
+                    {f.nome}
+                    {!f.ativo && <span className="rounded bg-slate-100 px-1 text-[10px] font-semibold text-slate-500">inativo</span>}
+                    <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold ${fluxoContratoSel?.id === f.id ? "bg-cyan-500 text-white" : "bg-slate-100 text-slate-500"}`}>{f.etapas.length}</span>
+                  </Link>
+                ))}
+              </div>
+              <FormSeguro acao={criarFluxoContratoSeguro} className="flex flex-col gap-2 border-t border-slate-100 pt-4">
+                <p className="text-xs font-semibold text-slate-600">Novo tipo de contrato</p>
+                <div className="flex flex-wrap items-center gap-2">
+                  <input name="nome" required maxLength={80} placeholder="Ex.: Dispensa de licitação" className="form-control w-64 py-2 text-xs" />
+                  <select name="baseId" defaultValue="" className="form-control w-auto py-2 text-xs" aria-label="Começar a partir de">
+                    <option value="">Começar vazio</option>
+                    {fluxosContrato.map((f) => <option key={f.id} value={f.id}>Copiar etapas de “{f.nome}”</option>)}
+                  </select>
+                  <button className="secondary-button min-h-9 px-3 py-1.5 text-xs"><PlusIcon className="h-3.5 w-3.5" />Criar</button>
+                </div>
+              </FormSeguro>
+            </div>
+          </Panel>
+
+          {fluxoContratoSel && (
+            <Panel
+              title={`Etapas — ${fluxoContratoSel.nome}`}
+              description={`${fluxoContratoSel.etapas.length} etapa(s) · ${fluxoContratoSel._count.contratos} contrato(s) usam este tipo`}
+              action={
+                <FormSeguro acao={alternarFluxoContratoSeguro} className="flex flex-col items-end" erroClassName="mt-1 max-w-[260px] text-right text-[11px] text-red-600">
+                  <input type="hidden" name="fluxoId" value={fluxoContratoSel.id} />
+                  <input type="hidden" name="ativo" value={String(!fluxoContratoSel.ativo)} />
+                  <button className={`min-h-8 rounded-lg px-3 py-1 text-[11px] font-semibold ${fluxoContratoSel.ativo ? "text-red-600 hover:bg-red-50" : "border border-emerald-200 text-emerald-700 hover:bg-emerald-50"}`}>
+                    {fluxoContratoSel.ativo ? "Desativar tipo" : "Ativar tipo"}
+                  </button>
+                </FormSeguro>
+              }
+            >
+              <div className="flex flex-col gap-3 p-5">
+                <FormSeguro acao={atualizarFluxoContratoSeguro} limparAoEnviar={false} className="grid gap-2 rounded-xl bg-slate-50 p-3 sm:grid-cols-[220px_minmax(0,1fr)_auto] sm:items-end">
+                  <input type="hidden" name="fluxoId" value={fluxoContratoSel.id} />
+                  <label className="text-xs font-semibold text-slate-600">Nome<input name="nome" required defaultValue={fluxoContratoSel.nome} className="form-control mt-1 py-2 text-sm" /></label>
+                  <label className="text-xs font-semibold text-slate-600">Descrição<input name="descricao" defaultValue={fluxoContratoSel.descricao ?? ""} placeholder="Quando usar este tipo" className="form-control mt-1 py-2 text-sm" /></label>
+                  <button className="secondary-button min-h-9 px-3 py-1.5 text-xs">Salvar</button>
+                </FormSeguro>
+
+                {fluxoContratoSel.etapas.length < 2 && (
+                  <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-900">
+                    Um tipo de contrato precisa de pelo menos 2 etapas para ser usado. A última etapa é o estado final do contrato.
+                  </p>
+                )}
+                {fluxoContratoSel.etapas.length >= 2 && !fluxoContratoSel.etapas.some((e) => e.liberaProjeto) && (
+                  <p className="rounded-lg bg-slate-50 px-3 py-2 text-xs leading-5 text-slate-600">
+                    Nenhuma etapa libera o projeto: contratos deste tipo não geram projeto técnico (útil para aditivos, por exemplo).
+                  </p>
+                )}
+                {fluxoContratoSel.etapas.map((etapa, i) => (
+                  <EtapaFluxoContratoRow key={etapa.id} etapa={etapa} posicao={i} total={fluxoContratoSel.etapas.length} />
+                ))}
+                <NovaEtapaFluxoContrato fluxoId={fluxoContratoSel.id} />
               </div>
             </Panel>
           )}
