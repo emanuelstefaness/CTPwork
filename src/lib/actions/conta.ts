@@ -1,6 +1,7 @@
 "use server";
 
-import { createHash, randomBytes } from "crypto";
+import { randomBytes } from "crypto";
+import { hashDoToken } from "@/lib/convites";
 import bcrypt from "bcryptjs";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
@@ -14,7 +15,7 @@ import { bloqueado, registrarFalha } from "@/lib/limite-tentativas";
 const SENHA_MINIMA = 8;
 const VALIDADE_TOKEN_MS = 60 * 60 * 1000; // 1 hora
 
-const hashDoToken = (token: string) => createHash("sha256").update(token).digest("hex");
+
 
 function validarNovaSenha(nova: string, confirmacao: string) {
   if (nova.length < SENHA_MINIMA) throw new ErroUsuario(`A nova senha precisa ter pelo menos ${SENHA_MINIMA} caracteres.`);
@@ -98,14 +99,17 @@ export async function redefinirSenha(formData: FormData): Promise<Resultado<{ me
 
     const registro = token ? await prisma.tokenSenha.findUnique({ where: { tokenHash: hashDoToken(token) } }) : null;
     if (!registro || registro.usadoEm || registro.expiraEm < new Date()) {
-      throw new ErroUsuario('Este link expirou ou já foi usado. Peça um novo em "Esqueci minha senha".');
+      throw new ErroUsuario(registro?.finalidade === "CONVITE"
+        ? "Este convite expirou ou já foi usado. Peça um novo convite à equipe do CTP."
+        : 'Este link expirou ou já foi usado. Peça um novo em "Esqueci minha senha".');
     }
     await prisma.$transaction([
-      prisma.user.update({ where: { id: registro.userId }, data: { passwordHash: await bcrypt.hash(nova, 10) } }),
+      prisma.user.update({ where: { id: registro.userId }, data: { passwordHash: await bcrypt.hash(nova, 10), convitePendente: false } }),
       // Invalida este e qualquer outro link pendente da mesma pessoa.
       prisma.tokenSenha.updateMany({ where: { userId: registro.userId, usadoEm: null }, data: { usadoEm: new Date() } }),
     ]);
-    await registrarAuditoria({ userId: registro.userId, acao: "REDEFINIR_SENHA", entidadeTipo: "User", entidadeId: registro.userId });
-    return { mensagem: "Senha criada. Entre com a nova senha." };
+    const convite = registro.finalidade === "CONVITE";
+    await registrarAuditoria({ userId: registro.userId, acao: convite ? "ACEITAR_CONVITE" : "REDEFINIR_SENHA", entidadeTipo: "User", entidadeId: registro.userId });
+    return { mensagem: convite ? "Pronto! Sua senha foi criada. Entre com seu e-mail e a nova senha." : "Senha criada. Entre com a nova senha." };
   });
 }

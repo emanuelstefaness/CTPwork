@@ -2,7 +2,6 @@ import Link from "next/link";
 import type { Metadata } from "next";
 import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/tenant";
-import { assertAcessoContratante } from "@/lib/tenant";
 import { podeVerContrato } from "@/lib/visibilidade";
 import { lerIds, pode } from "@/lib/permissoes";
 
@@ -49,7 +48,7 @@ export default async function ContratoDetailPage({ params }: { params: Promise<{
     },
   });
   if (!contrato) notFound();
-  assertAcessoContratante(user, contrato.contratanteId);
+  // Outra prefeitura (ou contrato fora do alcance do perfil): "não encontrado", sem revelar que existe.
   if (!(await podeVerContrato(user, contrato.id))) notFound();
 
   // Tudo vem do fluxo do próprio contrato (Cadastros › Fluxos de contrato), não de etapas fixas.
@@ -67,7 +66,12 @@ export default async function ContratoDetailPage({ params }: { params: Promise<{
     : "";
 
   const usuariosInternos = isInterno ? await prisma.user.findMany({ where: { tipo: "INTERNO", ativo: true }, orderBy: { nome: "asc" } }) : [];
-  const tiposProjeto = isInterno ? await prisma.tipoProjetoModelo.findMany({ include: { _count: { select: { etapas: true } } }, orderBy: { nome: "asc" } }) : [];
+  const tiposProjeto = isInterno ? await prisma.tipoProjetoModelo.findMany({
+    // Tipos gerais + os exclusivos desta prefeitura.
+    where: { OR: [{ municipioId: null }, { municipioId: contrato.contratanteId }] },
+    include: { _count: { select: { etapas: true } } },
+    orderBy: { nome: "asc" },
+  }) : [];
 
   const signatarios = contrato.fluxoAssinatura?.signatarios ?? [];
   const assinados = signatarios.filter((s) => s.status === "ASSINADO").length;

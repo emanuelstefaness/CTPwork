@@ -28,6 +28,7 @@ export async function criarContrato(formData: FormData) {
   const fluxoId = String(formData.get("fluxoId") ?? "") || FLUXO_PADRAO_ID;
   const fluxo = await prisma.fluxoContrato.findUnique({ where: { id: fluxoId }, include: { etapas: { orderBy: { ordem: "asc" } } } });
   if (!fluxo || !fluxo.ativo) throw new Error("Escolha um tipo de contrato ativo.");
+  if (fluxo.municipioId && fluxo.municipioId !== contratanteId) throw new Error(`O tipo "${fluxo.nome}" é exclusivo de outra prefeitura.`);
   if (fluxo.etapas.length < 2) throw new Error(`O tipo "${fluxo.nome}" precisa de pelo menos 2 etapas. Complete-o em Cadastros › Fluxos de contrato.`);
 
   const codigo = await gerarCodigoContrato();
@@ -210,6 +211,9 @@ export async function criarProjetoDoContrato(formData: FormData) {
     where: { chave: tipo },
     include: { etapas: { orderBy: { ordem: "asc" } } },
   });
+  if (tipoModelo?.municipioId && tipoModelo.municipioId !== contrato.contratanteId) {
+    throw new Error(`O tipo de projeto "${tipoModelo.nome}" é exclusivo de outra prefeitura.`);
+  }
   if (!tipoModelo || tipoModelo.etapas.length === 0) {
     throw new Error('Este tipo de projeto ainda não tem um fluxo de etapas configurado em "Cadastros › Fluxos de projeto".');
   }

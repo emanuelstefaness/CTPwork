@@ -17,7 +17,7 @@ export default async function NovoContratoPage() {
     prisma.fluxoContrato.findMany({
       where: { ativo: true },
       orderBy: { nome: "asc" },
-      select: { id: true, nome: true, descricao: true, etapas: { orderBy: { ordem: "asc" }, select: { nome: true, exigeAssinaturas: true, liberaProjeto: true } } },
+      select: { id: true, nome: true, descricao: true, municipioId: true, etapas: { orderBy: { ordem: "asc" }, select: { nome: true, exigeAssinaturas: true, liberaProjeto: true } } },
     }),
   ]);
   const utilizaveis = fluxos.filter((f) => f.etapas.length >= 2);

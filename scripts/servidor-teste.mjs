@@ -47,7 +47,7 @@ if (process.env.PULAR_BUILD !== "1") {
 }
 
 console.log(`[teste] servidor em http://127.0.0.1:${porta}`);
-const servidor = spawn(process.execPath, ["node_modules/next/dist/bin/next", "start", "--hostname", "127.0.0.1", "--port", porta], {
+const servidor = spawn(process.execPath, ["node_modules/next/dist/bin/next", "start", "--hostname", "127.0.0.1", "--port", porta, "--keepAliveTimeout", "65000"], {
   cwd: raiz,
   env,
   stdio: "inherit",

@@ -37,6 +37,8 @@ model Municipio {
   contratos        Contrato[]
   projetos         Projeto[]
   conversas        Conversa[]
+  fluxosContrato   FluxoContrato[]
+  tiposProjeto     TipoProjetoModelo[]
 }
 
 model User {
@@ -57,6 +59,8 @@ model User {
   // Acesso desativado pelo gestor (ex.: servidor que saiu da prefeitura): não entra mais, é
   // desconectado na hora e sai das listas de escolha e dos avisos — o histórico fica intacto.
   ativo         Boolean   @default(true)
+  // Criado por convite e ainda não definiu a própria senha.
+  convitePendente Boolean @default(false)
   desativadoEm  DateTime?
   createdAt     DateTime  @default(now())
 
@@ -194,6 +198,9 @@ model FluxoContrato {
   nome      String   @unique
   descricao String?
   ativo     Boolean  @default(true) // inativo: não aparece para contratos novos
+  // Exclusivo de uma prefeitura (só aparece nos contratos dela); nulo = disponível para todas.
+  municipioId String?
+  municipio   Municipio? @relation(fields: [municipioId], references: [id])
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -604,6 +611,7 @@ model TokenSenha {
   userId    String
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   tokenHash String    @unique
+  finalidade String   @default("REDEFINICAO") // REDEFINICAO (esqueci a senha) | CONVITE (primeiro acesso)
   expiraEm  DateTime
   usadoEm   DateTime?
   createdAt DateTime  @default(now())
@@ -635,6 +643,9 @@ model TipoProjetoModelo {
   id        String   @id @default(cuid())
   chave     String   @unique
   nome      String
+  // Exclusivo de uma prefeitura (só aparece para ela); nulo = disponível para todas.
+  municipioId String?
+  municipio   Municipio? @relation(fields: [municipioId], references: [id])
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

@@ -129,6 +129,20 @@ existindo para o assunto da etapa.
   no próximo clique; sai das listas de escolha e dos avisos, mas o histórico (comentários,
   assinaturas, mensagens, auditoria) fica. Reativável. Ninguém desativa a si mesmo nem o último gestor.
 
+## Prefeituras: assistente, fluxos exclusivos e convites
+
+- **Cadastros › Municípios › Nova prefeitura (assistente)**: numa tela só cadastra o município, as
+  pessoas da prefeitura (cada uma com seu perfil) e, se quiser, um tipo de contrato e um tipo de
+  projeto **exclusivos**, copiados de um existente para ajustar depois. Cada pessoa recebe um
+  **convite por e-mail** para criar a própria senha e só enxerga o que é daquela prefeitura.
+- **Fluxos exclusivos**: todo tipo de contrato e de projeto tem "Disponível para: todas as
+  prefeituras / só a Prefeitura X". Ao criar um contrato, aparecem os tipos gerais mais os
+  exclusivos da prefeitura escolhida (o exclusivo já vem sugerido); o servidor recusa usar o
+  exclusivo de outra.
+- **Convites** (`src/lib/convites.ts`): link de uso único válido por 7 dias, na mesma tela do
+  "esqueci minha senha". No cadastro avulso de usuário, deixar a senha em branco manda convite.
+  Quem ainda não aceitou aparece como "Convite pendente", com "Reenviar convite".
+
 ## Perfis e permissões
 
 Em **Cadastros › Perfis e permissões** o gestor cria perfis (cargos) — ex.: Jurídico, Financeiro,

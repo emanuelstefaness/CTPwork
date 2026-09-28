@@ -112,7 +112,7 @@ test("tipo desativado some da criação de contratos", async ({ page }) => {
   await page.goto("/cadastros?aba=fluxos-contrato");
   await page.getByRole("link", { name: new RegExp(TIPO) }).click();
   await page.getByRole("button", { name: "Desativar tipo" }).click();
-  await expect(page.getByRole("button", { name: "Ativar tipo" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Ativar tipo", exact: true })).toBeVisible();
 
   await page.goto("/contratos/novo");
   await expect(page.getByLabel("Tipo de contrato").locator("option", { hasText: TIPO })).toHaveCount(0);

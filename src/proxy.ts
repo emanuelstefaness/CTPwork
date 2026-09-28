@@ -55,7 +55,9 @@ export default auth((req) => {
     return NextResponse.redirect(loginUrl);
   }
 
-  if (req.auth && pathname === "/login") {
+  // Só a abertura da página: um POST (o próprio formulário de login, vindo de uma aba antiga ou
+  // com a sessão ainda viva) seguiria o 307 como POST para "/" e cairia numa tela de erro.
+  if (req.auth && pathname === "/login" && req.method === "GET") {
     return NextResponse.redirect(new URL("/", req.nextUrl.origin));
   }
 

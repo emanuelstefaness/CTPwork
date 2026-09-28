@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
-import { requireSession, assertAcessoContratante } from "@/lib/tenant";
+import { requireSession } from "@/lib/tenant";
 import { podeVerProjeto } from "@/lib/visibilidade";
 import { STATUS_ETAPA_LABEL } from "@/lib/constants";
 import { notFound } from "next/navigation";
@@ -22,7 +22,7 @@ export default async function ProjetoDetailPage({ params, searchParams }: { para
     include: { contratante: true, contratoOrigem: true, etapas: { orderBy: { ordem: "asc" } } },
   });
   if (!projeto) notFound();
-  assertAcessoContratante(user, projeto.contratanteId);
+  // Outra prefeitura (ou projeto fora do alcance do perfil): "não encontrado", sem revelar que existe.
   if (!(await podeVerProjeto(user, projeto.id))) notFound();
   const etapaSelecionada = projeto.etapas.find((e) => e.id === etapaIdParam) ?? projeto.etapas.find((e) => e.status !== "CONCLUIDA") ?? projeto.etapas[0];
   const concluidaCount = projeto.etapas.filter((e) => e.status === "CONCLUIDA").length;

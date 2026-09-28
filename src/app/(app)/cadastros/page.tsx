@@ -2,7 +2,7 @@ import {
   atualizarEtapaModeloSeguro, atualizarModeloFormularioSeguro, atualizarMunicipioSeguro, atualizarUsuarioSeguro,
   criarEtapaModeloSeguro, criarModeloFormularioSeguro, criarMunicipioSeguro, criarSetorSeguro, criarTipoProjetoSeguro,
   criarUsuarioSeguro, renomearSetorSeguro, renomearTipoProjetoSeguro,
-  alternarFluxoContratoSeguro, atualizarFluxoContratoSeguro, criarFluxoContratoSeguro,
+  alternarFluxoContratoSeguro, atualizarFluxoContratoSeguro, criarFluxoContratoSeguro, reenviarConviteSeguro,
 } from "@/lib/actions/formularios";
 import { EtapaFluxoContratoRow, NovaEtapaFluxoContrato } from "./EtapaFluxoContrato";
 import { FormSeguro } from "@/components/form-seguro";
@@ -33,9 +33,11 @@ const ABAS = [
 
 export const metadata: Metadata = { title: "Cadastros" };
 
-export default async function CadastrosPage({ searchParams }: { searchParams: Promise<{ aba?: string; editar?: string; fluxo?: string; perfil?: string }> }) {
+const nomeCurto = (municipio: string) => municipio.replace(/^Prefeitura (Municipal )?de /, "");
+
+export default async function CadastrosPage({ searchParams }: { searchParams: Promise<{ aba?: string; editar?: string; fluxo?: string; perfil?: string; nova?: string }> }) {
   const gestor = await exigirPermissao("cadastros");
-  const { aba: abaParam, editar, fluxo: fluxoParam, perfil: perfilParam } = await searchParams;
+  const { aba: abaParam, editar, fluxo: fluxoParam, perfil: perfilParam, nova } = await searchParams;
   const aba = ABAS.some((a) => a.chave === abaParam) ? abaParam! : "setores";
 
   const [setores, municipios, usuarios, modelos, tiposProjeto, fluxosContrato, perfis] = await Promise.all([
@@ -43,10 +45,17 @@ export default async function CadastrosPage({ searchParams }: { searchParams: Pr
     prisma.municipio.findMany({ orderBy: { nome: "asc" } }),
     prisma.user.findMany({ include: { setor: true, municipio: true, perfil: { select: { nome: true } } }, orderBy: { nome: "asc" } }),
     prisma.modeloFormulario.findMany({ orderBy: { nome: "asc" } }),
-    prisma.tipoProjetoModelo.findMany({ include: { etapas: { orderBy: { ordem: "asc" } } }, orderBy: { nome: "asc" } }),
-    prisma.fluxoContrato.findMany({ include: { etapas: { orderBy: { ordem: "asc" } }, _count: { select: { contratos: true } } }, orderBy: [{ ativo: "desc" }, { nome: "asc" }] }),
+    prisma.tipoProjetoModelo.findMany({ include: { etapas: { orderBy: { ordem: "asc" } }, municipio: { select: { nome: true } } }, orderBy: { nome: "asc" } }),
+    prisma.fluxoContrato.findMany({ include: { etapas: { orderBy: { ordem: "asc" } }, municipio: { select: { nome: true } }, _count: { select: { contratos: true } } }, orderBy: [{ ativo: "desc" }, { nome: "asc" }] }),
     prisma.perfil.findMany({ include: { _count: { select: { usuarios: true } } }, orderBy: [{ tipo: "desc" }, { nome: "asc" }] }),
   ]);
+  // Resumo do que o assistente "Nova prefeitura" acabou de criar.
+  const prefeituraNova = nova
+    ? await prisma.municipio.findUnique({
+        where: { id: nova },
+        include: { usuariosExternos: { select: { nome: true, email: true } }, fluxosContrato: { select: { nome: true } }, tiposProjeto: { select: { nome: true } } },
+      })
+    : null;
   const perfilSel = perfis.find((p) => p.id === perfilParam) ?? perfis[0];
   const perfisOpcoes = perfis.map((p) => ({ id: p.id, nome: p.nome, tipo: p.tipo }));
   const perfisInternos = perfisOpcoes.filter((p) => p.tipo === "INTERNO");
@@ -103,9 +112,25 @@ export default async function CadastrosPage({ searchParams }: { searchParams: Pr
         </div>
       )}
 
+      {aba === "municipios" && prefeituraNova && (
+        <div role="status" className="mb-5 rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-4 text-sm text-emerald-900">
+          <p className="font-semibold">{prefeituraNova.nome} cadastrada.</p>
+          <ul className="mt-1.5 list-disc space-y-0.5 pl-5 text-emerald-800">
+            {prefeituraNova.usuariosExternos.map((u) => <li key={u.email}>Convite enviado para {u.nome} ({u.email})</li>)}
+            {prefeituraNova.usuariosExternos.length === 0 && <li>Nenhum acesso criado ainda — cadastre em Usuários quando quiser.</li>}
+            {prefeituraNova.fluxosContrato.map((f) => <li key={f.nome}>Tipo de contrato exclusivo: {f.nome}</li>)}
+            {prefeituraNova.tiposProjeto.map((t) => <li key={t.nome}>Tipo de projeto exclusivo: {t.nome}</li>)}
+          </ul>
+        </div>
+      )}
+
       {aba === "municipios" && (
         <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_360px]">
-          <Panel title="Municípios cadastrados" description={`${municipios.length} município(s)`}>
+          <Panel
+            title="Municípios cadastrados"
+            description={`${municipios.length} município(s)`}
+            action={<Link href="/cadastros/nova-prefeitura" className="primary-button min-h-9 px-3 py-1.5 text-xs"><PlusIcon className="h-4 w-4" />Nova prefeitura (assistente)</Link>}
+          >
             <div className="divide-y divide-slate-100">
               {municipios.map((m) => (
                 <div key={m.id} className="px-5 py-4">
@@ -200,10 +225,17 @@ export default async function CadastrosPage({ searchParams }: { searchParams: Pr
                           <p className="truncate text-sm font-semibold text-slate-800">{u.nome}</p>
                           <Badge tone={u.tipo === "INTERNO" ? "cyan" : "emerald"}>{u.perfil?.nome ?? (u.tipo === "INTERNO" ? "Colaborador" : "Município")}{u.tipo === "INTERNO" ? " · CTP" : ""}</Badge>
                           {!u.ativo && <Badge tone="slate">Desativado{u.desativadoEm ? ` em ${formatarDiaDoEvento(u.desativadoEm)}` : ""}</Badge>}
+                          {u.ativo && u.convitePendente && <Badge tone="amber">Convite pendente</Badge>}
                         </div>
                         <p className="mt-0.5 truncate text-xs text-slate-400">{u.email} · {u.tipo === "INTERNO" ? (u.setor?.nome ?? "sem setor") : (u.municipio?.nome ?? "sem município")}</p>
                       </div>
                       <div className="flex shrink-0 items-center gap-1.5">
+                        {u.ativo && u.convitePendente && (
+                          <FormSeguro acao={reenviarConviteSeguro} className="flex flex-col items-end" erroClassName="text-[11px] text-red-600">
+                            <input type="hidden" name="usuarioId" value={u.id} />
+                            <button className="min-h-8 rounded-lg px-3 py-1 text-[11px] font-semibold text-cyan-700 hover:bg-cyan-50">Reenviar convite</button>
+                          </FormSeguro>
+                        )}
                         {u.id !== gestor.id && <BotaoAcessoUsuario usuarioId={u.id} nome={u.nome} ativo={u.ativo} />}
                         {u.ativo && <Link href={`/cadastros?aba=usuarios&editar=${u.id}`} className="secondary-button min-h-8 px-3 py-1 text-[11px]">Editar</Link>}
                       </div>
@@ -284,6 +316,7 @@ export default async function CadastrosPage({ searchParams }: { searchParams: Pr
                   }`}
                 >
                   {t.nome}
+                  {t.municipio && <span className="rounded bg-violet-50 px-1 text-[10px] font-semibold text-violet-700">{nomeCurto(t.municipio.nome)}</span>}
                   <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold ${fluxoSelecionado?.id === t.id ? "bg-cyan-500 text-white" : "bg-slate-100 text-slate-500"}`}>
                     {t.etapas.length}
                   </span>
@@ -307,11 +340,15 @@ export default async function CadastrosPage({ searchParams }: { searchParams: Pr
               title={`Fluxo de etapas — ${fluxoSelecionado.nome}`}
               description={`${fluxoSelecionado.etapas.length} etapa(s) · identificador interno "${fluxoSelecionado.chave}" (não muda, mesmo se você renomear)`}
               action={
-                <FormSeguro acao={renomearTipoProjetoSeguro} limparAoEnviar={false}>
-                  <div className="flex items-center gap-2">
+                <FormSeguro key={fluxoSelecionado.id} acao={renomearTipoProjetoSeguro} limparAoEnviar={false}>
+                  <div className="flex flex-wrap items-center gap-2">
                     <input type="hidden" name="tipoId" value={fluxoSelecionado.id} />
-                    <input name="nome" defaultValue={fluxoSelecionado.nome} className="form-control py-1.5 text-xs" />
-                    <button className="secondary-button min-h-8 px-2.5 py-1 text-[11px]">Renomear</button>
+                    <input name="nome" aria-label="Nome do tipo de projeto" defaultValue={fluxoSelecionado.nome} className="form-control w-48 py-1.5 text-xs" />
+                    <select name="municipioId" aria-label="Disponível para" defaultValue={fluxoSelecionado.municipioId ?? ""} className="form-control w-auto py-1.5 text-xs">
+                      <option value="">Todas as prefeituras</option>
+                      {municipios.map((m) => <option key={m.id} value={m.id}>Só {m.nome}</option>)}
+                    </select>
+                    <button className="secondary-button min-h-8 px-2.5 py-1 text-[11px]">Salvar</button>
                   </div>
                 </FormSeguro>
               }
@@ -354,6 +391,7 @@ export default async function CadastrosPage({ searchParams }: { searchParams: Pr
                     } ${f.ativo ? "" : "opacity-60"}`}
                   >
                     {f.nome}
+                    {f.municipio && <span className="rounded bg-violet-50 px-1 text-[10px] font-semibold text-violet-700">{nomeCurto(f.municipio.nome)}</span>}
                     {!f.ativo && <span className="rounded bg-slate-100 px-1 text-[10px] font-semibold text-slate-500">inativo</span>}
                     <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold ${fluxoContratoSel?.id === f.id ? "bg-cyan-500 text-white" : "bg-slate-100 text-slate-500"}`}>{f.etapas.length}</span>
                   </Link>
@@ -388,10 +426,17 @@ export default async function CadastrosPage({ searchParams }: { searchParams: Pr
               }
             >
               <div className="flex flex-col gap-3 p-5">
-                <FormSeguro acao={atualizarFluxoContratoSeguro} limparAoEnviar={false} className="grid gap-2 rounded-xl bg-slate-50 p-3 sm:grid-cols-[220px_minmax(0,1fr)_auto] sm:items-end">
+                <FormSeguro key={fluxoContratoSel.id} acao={atualizarFluxoContratoSeguro} limparAoEnviar={false} className="grid gap-2 rounded-xl bg-slate-50 p-3 sm:grid-cols-[200px_minmax(0,1fr)_200px_auto] sm:items-end">
                   <input type="hidden" name="fluxoId" value={fluxoContratoSel.id} />
                   <label className="text-xs font-semibold text-slate-600">Nome<input name="nome" required defaultValue={fluxoContratoSel.nome} className="form-control mt-1 py-2 text-sm" /></label>
                   <label className="text-xs font-semibold text-slate-600">Descrição<input name="descricao" defaultValue={fluxoContratoSel.descricao ?? ""} placeholder="Quando usar este tipo" className="form-control mt-1 py-2 text-sm" /></label>
+                  <label className="text-xs font-semibold text-slate-600">
+                    Disponível para
+                    <select name="municipioId" defaultValue={fluxoContratoSel.municipioId ?? ""} className="form-control mt-1 py-2 text-sm">
+                      <option value="">Todas as prefeituras</option>
+                      {municipios.map((m) => <option key={m.id} value={m.id}>Só {m.nome}</option>)}
+                    </select>
+                  </label>
                   <button className="secondary-button min-h-9 px-3 py-1.5 text-xs">Salvar</button>
                 </FormSeguro>
 

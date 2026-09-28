@@ -7,6 +7,7 @@ import { registrarAuditoria } from "@/lib/audit";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { chaveDaEtapa } from "@/lib/fluxo-contrato";
+import { enviarConvite, senhaInutilizavel } from "@/lib/convites";
 import { lerPermissoes, permissoesDoTipo, type TipoPerfil } from "@/lib/permissoes";
 import { aindaHaAdministrador, MSG_SEM_ADMINISTRADOR } from "@/lib/usuarios-permissao";
 
@@ -39,6 +40,99 @@ export async function renomearSetor(formData: FormData) {
 }
 
 // ---------- Município ----------
+
+/**
+ * Assistente "Nova prefeitura" (Cadastros › Municípios): num passo só cria o município, os
+ * usuários da prefeitura (cada um com seu perfil, recebendo convite por e-mail para criar a
+ * própria senha) e, se pedido, fluxos exclusivos copiados de um fluxo existente.
+ */
+export async function criarPrefeitura(formData: FormData) {
+  const user = await exigirPermissao("cadastros");
+  const nome = String(formData.get("nome") ?? "").trim().slice(0, 120);
+  const contatoNome = String(formData.get("contatoNome") ?? "").trim() || null;
+  const contatoEmail = String(formData.get("contatoEmail") ?? "").trim() || null;
+  const contatoFone = String(formData.get("contatoFone") ?? "").trim() || null;
+  if (!nome) throw new Error("Informe o nome da prefeitura.");
+  const existentes = await prisma.municipio.findMany({ select: { nome: true } });
+  if (existentes.some((m) => m.nome.trim().toLowerCase() === nome.toLowerCase())) throw new Error(`Já existe um município chamado "${nome}".`);
+
+  // Usuários: linhas do formulário; linhas totalmente vazias são ignoradas.
+  const nomes = formData.getAll("usuarioNome").map((v) => String(v).trim());
+  const emails = formData.getAll("usuarioEmail").map((v) => String(v).trim().toLowerCase());
+  const perfisIds = formData.getAll("usuarioPerfil").map(String);
+  const usuarios = nomes
+    .map((n, i) => ({ nome: n, email: emails[i] ?? "", perfilId: perfisIds[i] ?? "" }))
+    .filter((u) => u.nome || u.email);
+  for (const u of usuarios) {
+    if (!u.nome || !u.email) throw new Error("Cada usuário precisa de nome e e-mail.");
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(u.email)) throw new Error(`E-mail inválido: ${u.email}`);
+  }
+  if (new Set(usuarios.map((u) => u.email)).size !== usuarios.length) throw new Error("Há e-mails repetidos na lista de usuários.");
+  const jaCadastrados = await prisma.user.findMany({ where: { email: { in: usuarios.map((u) => u.email) } }, select: { email: true } });
+  if (jaCadastrados.length) throw new Error(`Já existe usuário com o e-mail ${jaCadastrados.map((u) => u.email).join(", ")}.`);
+  const perfisValidos = new Set((await prisma.perfil.findMany({ where: { tipo: "EXTERNO" }, select: { id: true } })).map((p) => p.id));
+  if (usuarios.some((u) => !perfisValidos.has(u.perfilId))) throw new Error("Escolha o perfil de cada usuário da prefeitura.");
+
+  // Fluxos exclusivos (opcionais), copiados de um existente para ajustar depois.
+  const nomeCurto = nome.replace(/^Prefeitura (Municipal )?de /i, "");
+  const baseContrato = String(formData.get("fluxoContratoBase") ?? "");
+  const baseProjeto = String(formData.get("fluxoProjetoBase") ?? "");
+  const fluxoBase = baseContrato ? await prisma.fluxoContrato.findUnique({ where: { id: baseContrato }, include: { etapas: true } }) : null;
+  const tipoBase = baseProjeto ? await prisma.tipoProjetoModelo.findUnique({ where: { id: baseProjeto }, include: { etapas: true } }) : null;
+  const nomeFluxo = fluxoBase ? `${fluxoBase.nome} — ${nomeCurto}` : "";
+  if (fluxoBase && (await prisma.fluxoContrato.findUnique({ where: { nome: nomeFluxo } }))) throw new Error(`Já existe um tipo de contrato "${nomeFluxo}".`);
+  let chaveProjeto = "";
+  if (tipoBase) {
+    const base = slugificarChave(`${tipoBase.nome} ${nomeCurto}`) || "PROJETO";
+    chaveProjeto = base;
+    for (let n = 2; await prisma.tipoProjetoModelo.findUnique({ where: { chave: chaveProjeto } }); n++) chaveProjeto = `${base}_${n}`;
+  }
+
+  const hashes = await Promise.all(usuarios.map(() => senhaInutilizavel()));
+  const municipio = await prisma.$transaction(async (tx) => {
+    const m = await tx.municipio.create({ data: { nome, contatoNome, contatoEmail, contatoFone } });
+    for (const [i, u] of usuarios.entries()) {
+      await tx.user.create({ data: { nome: u.nome, email: u.email, passwordHash: hashes[i], tipo: "EXTERNO", municipioId: m.id, perfilId: u.perfilId, convitePendente: true } });
+    }
+    if (fluxoBase) {
+      await tx.fluxoContrato.create({
+        data: {
+          nome: nomeFluxo,
+          descricao: `Tipo de contrato exclusivo da ${nome}.`,
+          municipioId: m.id,
+          etapas: { create: fluxoBase.etapas.map(({ ordem, chave, nome, curto, exigeAssinaturas, liberaProjeto, perfisQueAvancam }) => ({ ordem, chave, nome, curto, exigeAssinaturas, liberaProjeto, perfisQueAvancam })) },
+        },
+      });
+    }
+    if (tipoBase) {
+      await tx.tipoProjetoModelo.create({
+        data: {
+          nome: `${tipoBase.nome} — ${nomeCurto}`,
+          chave: chaveProjeto,
+          municipioId: m.id,
+          etapas: {
+            create: tipoBase.etapas.map(({ ordem, nome, temInformacoesProjeto, temFormulario, temChecklist, temRevisao, modoRevisao }) => ({ ordem, nome, temInformacoesProjeto, temFormulario, temChecklist, temRevisao, modoRevisao })),
+          },
+        },
+      });
+    }
+    return m;
+  });
+
+  // Convites depois de gravar: se um e-mail falhar, o cadastro já existe e dá para reenviar.
+  const criados = await prisma.user.findMany({ where: { municipioId: municipio.id }, select: { id: true } });
+  for (const u of criados) await enviarConvite(u.id, user.name ?? "A equipe do CTP");
+
+  await registrarAuditoria({
+    userId: user.id,
+    acao: "CRIAR_PREFEITURA",
+    entidadeTipo: "Municipio",
+    entidadeId: municipio.id,
+    detalhe: `${nome} · ${usuarios.length} usuário(s)${fluxoBase ? ` · contrato: ${nomeFluxo}` : ""}${tipoBase ? ` · projeto: ${tipoBase.nome} — ${nomeCurto}` : ""}`,
+  });
+  revalidatePath("/cadastros");
+  redirect(`/cadastros?aba=municipios&nova=${municipio.id}`);
+}
 
 export async function criarMunicipio(formData: FormData) {
   const user = await exigirPermissao("cadastros");
@@ -76,30 +170,47 @@ export async function criarUsuario(formData: FormData) {
   const senha = String(formData.get("senha") ?? "");
   const tipo = String(formData.get("tipo"));
 
-  if (!nome || !email || !senha) throw new Error("Nome, e-mail e senha são obrigatórios.");
-  if (senha.length < 6) throw new Error("A senha precisa ter ao menos 6 caracteres.");
+  if (!nome || !email) throw new Error("Nome e e-mail são obrigatórios.");
+  if (!/^[^@s]+@[^@s]+.[^@s]+$/.test(email)) throw new Error("Informe um e-mail válido.");
+  // Sem senha = convite por e-mail (a pessoa cria a própria senha). Com senha, vale a digitada.
+  if (senha && senha.length < 8) throw new Error("A senha precisa ter ao menos 8 caracteres — ou deixe em branco para enviar um convite.");
   if (tipo !== "INTERNO" && tipo !== "EXTERNO") throw new Error("Tipo de usuário inválido.");
 
   const existente = await prisma.user.findUnique({ where: { email } });
   if (existente) throw new Error(`Já existe um usuário com o e-mail "${email}".`);
 
-  const passwordHash = await bcrypt.hash(senha, 10);
+  const passwordHash = senha ? await bcrypt.hash(senha, 10) : await senhaInutilizavel();
   const perfil = await perfilDoFormulario(formData, tipo);
+  let novoId: string;
 
   if (tipo === "INTERNO") {
     const setorId = String(formData.get("setorId") ?? "") || null;
     if (!setorId) throw new Error("Selecione o setor do colaborador.");
 
     const novo = await prisma.user.create({ data: { nome, email, passwordHash, tipo, perfilId: perfil.id, perfilInterno: perfilLegado(perfil), setorId } });
+    novoId = novo.id;
     await registrarAuditoria({ userId: user.id, acao: "CRIAR", entidadeTipo: "User", entidadeId: novo.id, detalhe: `${email} · ${perfil.nome}` });
   } else {
     const municipioId = String(formData.get("municipioId") ?? "") || null;
     if (!municipioId) throw new Error("Selecione o município deste usuário externo.");
 
     const novo = await prisma.user.create({ data: { nome, email, passwordHash, tipo, perfilId: perfil.id, municipioId } });
+    novoId = novo.id;
     await registrarAuditoria({ userId: user.id, acao: "CRIAR", entidadeTipo: "User", entidadeId: novo.id, detalhe: `${email} · ${perfil.nome}` });
   }
 
+  if (!senha) await enviarConvite(novoId, user.name ?? "A equipe do CTP");
+  revalidatePath("/cadastros");
+}
+
+/** Manda de novo o convite de primeiro acesso (o anterior deixa de valer). */
+export async function reenviarConvite(usuarioId: string) {
+  const user = await exigirPermissao("cadastros");
+  const alvo = await prisma.user.findUnique({ where: { id: usuarioId } });
+  if (!alvo) throw new Error("Usuário não encontrado.");
+  if (!alvo.ativo) throw new Error("Reative o acesso antes de reenviar o convite.");
+  await enviarConvite(usuarioId, user.name ?? "A equipe do CTP");
+  await registrarAuditoria({ userId: user.id, acao: "REENVIAR_CONVITE", entidadeTipo: "User", entidadeId: usuarioId, detalhe: alvo.email });
   revalidatePath("/cadastros");
 }
 
@@ -217,6 +328,17 @@ export async function atualizarModeloFormulario(formData: FormData) {
   await prisma.modeloFormulario.update({ where: { id: modeloId }, data: { nome, campos: JSON.stringify(campos) } });
   await registrarAuditoria({ userId: user.id, acao: "ATUALIZAR", entidadeTipo: "ModeloFormulario", entidadeId: modeloId, detalhe: nome });
   revalidatePath("/cadastros");
+}
+
+/**
+ * "Disponível para" de um fluxo (de contrato ou de projeto): vazio = todas as prefeituras;
+ * um município = exclusivo dele (só aparece ao criar contratos/projetos daquela prefeitura).
+ */
+async function municipioDoFormulario(formData: FormData): Promise<string | null> {
+  const id = String(formData.get("municipioId") ?? "");
+  if (!id) return null;
+  if (!(await prisma.municipio.findUnique({ where: { id }, select: { id: true } }))) throw new Error("Município não encontrado.");
+  return id;
 }
 
 // ---------- Perfis (cargos) e permissões ----------
@@ -338,7 +460,8 @@ export async function atualizarFluxoContrato(formData: FormData) {
   if (!nome) throw new Error("Dê um nome ao tipo de contrato.");
   const mesmoNome = await prisma.fluxoContrato.findUnique({ where: { nome } });
   if (mesmoNome && mesmoNome.id !== fluxoId) throw new Error(`Já existe um tipo de contrato chamado "${nome}".`);
-  await prisma.fluxoContrato.update({ where: { id: fluxoId }, data: { nome, descricao } });
+  const municipioId = await municipioDoFormulario(formData);
+  await prisma.fluxoContrato.update({ where: { id: fluxoId }, data: { nome, descricao, municipioId } });
   await registrarAuditoria({ userId: user.id, acao: "ATUALIZAR", entidadeTipo: "FluxoContrato", entidadeId: fluxoId, detalhe: nome });
   revalidatePath("/cadastros");
 }
@@ -446,7 +569,8 @@ export async function renomearTipoProjeto(formData: FormData) {
   const nome = String(formData.get("nome") ?? "").trim();
   if (!nome) throw new Error("Nome é obrigatório.");
 
-  await prisma.tipoProjetoModelo.update({ where: { id: tipoId }, data: { nome } });
+  const municipioId = await municipioDoFormulario(formData);
+  await prisma.tipoProjetoModelo.update({ where: { id: tipoId }, data: { nome, municipioId } });
   await registrarAuditoria({ userId: user.id, acao: "RENOMEAR", entidadeTipo: "TipoProjetoModelo", entidadeId: tipoId, detalhe: nome });
   revalidatePath("/cadastros");
 }

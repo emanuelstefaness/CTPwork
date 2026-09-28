@@ -6,7 +6,7 @@ import { InformationCircleIcon, PencilSquareIcon, PlusIcon, RocketLaunchIcon } f
 import { FormSeguro } from "@/components/form-seguro";
 import { criarContratoSeguro } from "@/lib/actions/formularios";
 
-type Fluxo = { id: string; nome: string; descricao: string | null; etapas: { nome: string; exigeAssinaturas: boolean; liberaProjeto: boolean }[] };
+type Fluxo = { id: string; nome: string; descricao: string | null; municipioId: string | null; etapas: { nome: string; exigeAssinaturas: boolean; liberaProjeto: boolean }[] };
 
 export default function NovoContratoForm({
   municipios,
@@ -23,29 +23,27 @@ export default function NovoContratoForm({
   fluxoPadrao: string;
   podeConfigurar: boolean;
 }) {
+  const [municipioId, setMunicipioId] = useState("");
   const [fluxoId, setFluxoId] = useState(fluxoPadrao);
-  const fluxo = fluxos.find((f) => f.id === fluxoId) ?? fluxos[0];
+  // Tipos gerais + os exclusivos da prefeitura escolhida (os de outras prefeituras não aparecem).
+  const disponiveis = fluxos.filter((f) => !f.municipioId || f.municipioId === municipioId);
+  const fluxo = disponiveis.find((f) => f.id === fluxoId) ?? disponiveis.find((f) => f.id === fluxoPadrao) ?? disponiveis[0];
+  const escolherMunicipio = (id: string) => {
+    setMunicipioId(id);
+    // Prefeitura com tipo exclusivo: já sugere o exclusivo.
+    const exclusivo = fluxos.find((f) => f.municipioId === id);
+    if (exclusivo) setFluxoId(exclusivo.id);
+    else if (!fluxos.some((f) => f.id === fluxoId && (!f.municipioId || f.municipioId === id))) setFluxoId(fluxoPadrao);
+  };
 
   return (
     <div className="grid grid-cols-[minmax(0,1fr)] gap-5 lg:grid-cols-[minmax(0,1fr)_300px]">
       <FormSeguro acao={criarContratoSeguro} limparAoEnviar={false} className="surface-panel" erroClassName="flex items-center gap-1.5 border-t border-red-100 bg-red-50 px-6 py-3 text-sm text-red-700">
         <div className="flex flex-col gap-5 px-6 py-6">
-          <label className="block">
-            <span className="mb-1.5 block text-sm font-medium text-slate-700">Tipo de contrato</span>
-            <select name="fluxoId" value={fluxoId} onChange={(e) => setFluxoId(e.target.value)} className="form-control">
-              {fluxos.map((f) => <option key={f.id} value={f.id}>{f.nome}</option>)}
-            </select>
-            <span className="mt-1 block text-xs text-slate-400">{fluxo?.descricao ?? "Define as etapas que o contrato vai percorrer."}</span>
-          </label>
-          <label className="block">
-            <span className="mb-1.5 block text-sm font-medium text-slate-700">Objeto do contrato</span>
-            <input name="objeto" required className="form-control" placeholder="Ex.: Elaboração do Plano Diretor Municipal" />
-            <span className="mt-1 block text-xs text-slate-400">Descreva o serviço como aparecerá no termo de referência.</span>
-          </label>
           <div className="grid gap-5 sm:grid-cols-2">
             <label className="block">
               <span className="mb-1.5 block text-sm font-medium text-slate-700">Município contratante</span>
-              <select name="contratanteId" required className="form-control" defaultValue="">
+              <select name="contratanteId" required className="form-control" value={municipioId} onChange={(e) => escolherMunicipio(e.target.value)}>
                 <option value="" disabled>Selecione o município</option>
                 {municipios.map((m) => <option key={m.id} value={m.id}>{m.nome}</option>)}
               </select>
@@ -57,6 +55,18 @@ export default function NovoContratoForm({
               </select>
             </label>
           </div>
+          <label className="block">
+            <span className="mb-1.5 block text-sm font-medium text-slate-700">Tipo de contrato</span>
+            <select name="fluxoId" value={fluxo?.id ?? ""} onChange={(e) => setFluxoId(e.target.value)} className="form-control">
+              {disponiveis.map((f) => <option key={f.id} value={f.id}>{f.nome}{f.municipioId ? " (exclusivo desta prefeitura)" : ""}</option>)}
+            </select>
+            <span className="mt-1 block text-xs text-slate-400">{fluxo?.descricao ?? "Define as etapas que o contrato vai percorrer."}</span>
+          </label>
+          <label className="block">
+            <span className="mb-1.5 block text-sm font-medium text-slate-700">Objeto do contrato</span>
+            <input name="objeto" required className="form-control" placeholder="Ex.: Elaboração do Plano Diretor Municipal" />
+            <span className="mt-1 block text-xs text-slate-400">Descreva o serviço como aparecerá no termo de referência.</span>
+          </label>
           <label className="block">
             <span className="mb-1.5 block text-sm font-medium text-slate-700">Tags <span className="font-normal text-slate-400">(opcional)</span></span>
             <input name="tags" className="form-control" placeholder="plano-diretor, prioritário" />

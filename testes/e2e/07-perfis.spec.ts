@@ -65,9 +65,9 @@ test("perfil do CTP que vê só onde participa, sem dashboard e sem gerenciar co
   // Cria uma pessoa com esse perfil.
   await page.goto("/cadastros?aba=usuarios");
   const novo = page.locator("form", { hasText: "Criar usuário" });
-  await novo.getByLabel("Nome").fill("Paula Jurídica");
-  await novo.getByLabel("E-mail").fill("paula.juridica@ctp.org.br");
-  await novo.getByLabel("Senha inicial").fill(SENHA);
+  await novo.locator("input[name=nome]").fill("Paula Jurídica");
+  await novo.locator("input[name=email]").fill("paula.juridica@ctp.org.br");
+  await novo.locator("input[name=senha]").fill(SENHA);
   await novo.getByLabel("Setor").selectOption({ index: 1 });
   await novo.getByLabel("Perfil").selectOption({ label: "Jurídico" });
   await novo.getByRole("button", { name: "Criar usuário" }).click();
