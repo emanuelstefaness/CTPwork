@@ -13,7 +13,7 @@ export default async function LoginPage({
   const { callbackUrl, sessao } = await searchParams;
   // Em produção as contas de demonstração (com a senha) só aparecem se pedido explicitamente; e só
   // quando elas existem no banco (no banco limpo, sem dados de exemplo, o atalho some).
-  const permitido = process.env.MOSTRAR_CONTAS_DEMO === "true" || (process.env.NODE_ENV !== "production" && process.env.MOSTRAR_CONTAS_DEMO !== "false");
+  const permitido = process.env.MOSTRAR_CONTAS_DEMO === "true" || process.env.DADOS_DEMONSTRACAO === "true" || (process.env.NODE_ENV !== "production" && process.env.MOSTRAR_CONTAS_DEMO !== "false");
   const mostrarContasDemo = permitido && (await prisma.user.count({ where: { email: "gestor@ctp.org.br", ativo: true } })) > 0;
 
   return (

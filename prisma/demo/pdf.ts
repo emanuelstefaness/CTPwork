@@ -117,10 +117,18 @@ export function gerarPdf(rodape: string, blocos: Bloco[]): Buffer {
 
 const PASTA = path.join(process.env.STORAGE_DIR ?? path.join(process.cwd(), "storage"), "uploads");
 
-/** Grava o PDF em storage/uploads/<anexoId> e devolve o tamanho em bytes. */
+/**
+ * Grava o PDF em storage/uploads/<anexoId> — ou no Vercel Blob, quando a demonstração é semeada na
+ * publicação (mesmo caminho de src/lib/arquivos.ts) — e devolve o tamanho em bytes.
+ */
 export async function gravarPdf(anexoId: string, rodape: string, blocos: Bloco[]): Promise<number> {
-  await mkdir(PASTA, { recursive: true });
   const buffer = gerarPdf(rodape, blocos);
+  if (process.env.BLOB_READ_WRITE_TOKEN || process.env.BLOB_STORE_ID) {
+    const { put } = await import("@vercel/blob");
+    await put(`uploads/${anexoId}`, buffer, { access: "private", contentType: "application/pdf", addRandomSuffix: false, allowOverwrite: true });
+    return buffer.length;
+  }
+  await mkdir(PASTA, { recursive: true });
   await writeFile(path.join(PASTA, anexoId), buffer);
   return buffer.length;
 }

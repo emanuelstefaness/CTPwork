@@ -8,6 +8,7 @@ import {
   removerEventoCronogramaSeguro, responderFormularioEtapaSeguro,
 } from "@/lib/actions/formularios";
 import { formatarData } from "@/lib/formatters";
+import { limiteAnexoTexto } from "@/lib/limite-anexo";
 import { Badge, Panel, ProgressBar } from "@/components/ui";
 import { FormSeguro } from "@/components/form-seguro";
 import { EnviarArquivoChecklist } from "./EnviarArquivoChecklist";
@@ -193,7 +194,7 @@ export default async function EtapaPanel({ etapaId, projeto }: { etapaId: string
         {etapa.mensagens.map((m) => <div key={m.id} className="flex gap-2.5"><span className={`grid h-8 w-8 shrink-0 place-items-center rounded-full text-[10px] font-bold ${m.autor.tipo === "EXTERNO" ? "bg-emerald-100 text-emerald-700" : "bg-blue-100 text-blue-700"}`}>{initials(m.autor.nome)}</span><div className="min-w-0 flex-1"><div className="flex items-baseline justify-between gap-2"><p className="truncate text-xs font-semibold text-slate-800">{m.autor.nome} <span className="font-normal text-slate-400">({m.autor.tipo === "EXTERNO" ? "Município" : "CTP"})</span></p><time className="shrink-0 text-[10px] text-slate-400">{m.createdAt.toLocaleDateString("pt-BR")}</time></div><div className="mt-1 rounded-xl rounded-tl-sm bg-slate-50 px-3 py-2 text-xs leading-5 text-slate-600">{m.texto}{m.anexo && <a href={m.anexo.caminho} target="_blank" className="mt-1 flex items-center gap-1 font-semibold text-cyan-700"><PaperClipIcon className="h-3.5 w-3.5" />{m.anexo.nomeOriginal}</a>}</div></div></div>)}
         {etapa.mensagens.length === 0 && <p className="py-10 text-center text-xs text-slate-400">Nenhuma mensagem nesta etapa.</p>}
       </div>
-      <FormSeguro acao={enviarMensagemChatSeguro} className="border-t border-slate-100 p-3"><input type="hidden" name="etapaId" value={etapaId} /><div className="flex gap-2"><input name="texto" aria-label="Mensagem" placeholder="Digite sua mensagem..." className="form-control min-w-0 flex-1 py-2 text-xs" /><label className="secondary-button min-h-9 cursor-pointer px-2.5 py-1.5" title="Anexar arquivo (até 20 MB)"><PaperClipIcon className="h-4 w-4" /><input type="file" name="arquivo" accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg" className="sr-only" /></label><button type="submit" className="primary-button min-h-9 px-3 py-1.5" aria-label="Enviar mensagem"><PaperAirplaneIcon className="h-4 w-4" /></button></div></FormSeguro>
+      <FormSeguro acao={enviarMensagemChatSeguro} className="border-t border-slate-100 p-3"><input type="hidden" name="etapaId" value={etapaId} /><div className="flex gap-2"><input name="texto" aria-label="Mensagem" placeholder="Digite sua mensagem..." className="form-control min-w-0 flex-1 py-2 text-xs" /><label className="secondary-button min-h-9 cursor-pointer px-2.5 py-1.5" title={`Anexar arquivo (até ${limiteAnexoTexto()})`}><PaperClipIcon className="h-4 w-4" /><input type="file" name="arquivo" accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg" className="sr-only" /></label><button type="submit" className="primary-button min-h-9 px-3 py-1.5" aria-label="Enviar mensagem"><PaperAirplaneIcon className="h-4 w-4" /></button></div></FormSeguro>
     </Panel>
   );
 

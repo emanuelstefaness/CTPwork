@@ -2,9 +2,7 @@
 
 import { useState, useTransition, type FormEvent } from "react";
 import type { Resultado } from "@/lib/resultado";
-
-/** Mesmo limite de src/lib/storage.ts — checado antes de subir o arquivo, para não esperar o upload à toa. */
-const LIMITE_ARQUIVO = 20 * 1024 * 1024;
+import { limiteAnexoBytes, limiteAnexoTexto } from "@/lib/limite-anexo";
 
 const ehNavegacaoDoNext =(e: unknown) => {
   const digest = (e as { digest?: unknown } | null)?.digest;
@@ -31,9 +29,9 @@ export function useEnvio(
     const form = e.currentTarget;
     const dados = new FormData(form);
     setErro(null);
-    const grande = [...dados.values()].find((v): v is File => v instanceof File && v.size > LIMITE_ARQUIVO);
+    const grande = [...dados.values()].find((v): v is File => v instanceof File && v.size > limiteAnexoBytes());
     if (grande) {
-      setErro(`"${grande.name}" tem ${(grande.size / 1024 / 1024).toFixed(1)} MB — o limite é 20 MB por arquivo.`);
+      setErro(`"${grande.name}" tem ${(grande.size / 1024 / 1024).toFixed(1)} MB — o limite é ${limiteAnexoTexto()} por arquivo.`);
       return;
     }
     iniciar(async () => {

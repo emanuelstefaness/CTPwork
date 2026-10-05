@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useEnvio } from "@/components/use-envio";
+import { limiteAnexoTexto } from "@/lib/limite-anexo";
 import { iniciarConversa } from "@/lib/actions/conversas";
 import { ExclamationCircleIcon, PaperAirplaneIcon, PaperClipIcon } from "@heroicons/react/24/outline";
 
@@ -73,7 +74,7 @@ export default function NovaConversaForm({
 
         <label className="flex cursor-pointer items-center gap-2 self-start rounded-xl border border-dashed border-slate-300 px-3.5 py-2.5 text-sm text-slate-600 hover:border-cyan-400 hover:bg-cyan-50/40">
           <PaperClipIcon className="h-4 w-4 text-slate-400" />
-          {arquivo ?? "Anexar arquivo (PDF, Word, Excel ou imagem, até 20 MB)"}
+          {arquivo ?? `Anexar arquivo (PDF, Word, Excel ou imagem, até ${limiteAnexoTexto()})`}
           <input type="file" name="arquivo" accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg" className="sr-only" onChange={(e) => setArquivo(e.target.files?.[0]?.name ?? null)} />
         </label>
       </div>

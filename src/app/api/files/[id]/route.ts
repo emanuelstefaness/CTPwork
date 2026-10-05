@@ -1,8 +1,6 @@
-import { readFile } from "fs/promises";
-import path from "path";
 import { prisma } from "@/lib/prisma";
 import { requireSession, assertAcessoContratante } from "@/lib/tenant";
-import { pastaUploads } from "@/lib/pastas";
+import { lerArquivo } from "@/lib/arquivos";
 import { podeVerContrato, podeVerProjeto } from "@/lib/visibilidade";
 
 export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -40,16 +38,13 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   if (projetoId && !(await podeVerProjeto(user, projetoId))) return new Response("Acesso negado", { status: 403 });
   if (anexo.contratoId && !(await podeVerContrato(user, anexo.contratoId))) return new Response("Acesso negado", { status: 403 });
 
-  try {
-    const bytes = await readFile(path.join(pastaUploads(), anexo.id));
-    return new Response(bytes, {
-      headers: {
-        "Content-Type": anexo.tipoMime,
-        "Content-Disposition": `inline; filename*=UTF-8''${encodeURIComponent(anexo.nomeOriginal)}`,
-        "Cache-Control": "private, no-store",
-      },
-    });
-  } catch {
-    return new Response("Arquivo indisponível", { status: 404 });
-  }
+  const bytes = await lerArquivo(anexo.id).catch(() => null);
+  if (!bytes) return new Response("Arquivo indisponível", { status: 404 });
+  return new Response(bytes as BodyInit, {
+    headers: {
+      "Content-Type": anexo.tipoMime,
+      "Content-Disposition": `inline; filename*=UTF-8''${encodeURIComponent(anexo.nomeOriginal)}`,
+      "Cache-Control": "private, no-store",
+    },
+  });
 }

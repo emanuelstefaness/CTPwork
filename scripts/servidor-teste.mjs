@@ -5,16 +5,21 @@
  *   3. build de produção e `next start` na porta 4200.
  * O banco de desenvolvimento (dev.db) e a pasta storage/ nunca são tocados.
  * PULAR_BUILD=1 reaproveita o último build (mais rápido quando só os testes mudaram).
+ * TESTE_POSTGRES_URL=postgresql://… roda tudo num PostgreSQL descartável (como na Vercel) — o banco é
+ * APAGADO. Depois, `npx prisma generate` devolve o cliente do SQLite para o desenvolvimento.
  */
 import { spawn, spawnSync } from "node:child_process";
 import { mkdirSync, rmSync } from "node:fs";
 import path from "node:path";
+import { gerarSchemaPostgres } from "./schema-postgres.mjs";
 
 const raiz = process.cwd();
 const porta = process.env.PORTA_TESTE ?? "4200";
+const urlPostgres = process.env.TESTE_POSTGRES_URL;
 const env = {
   ...process.env,
-  DATABASE_URL: "file:./teste.db",
+  DATABASE_URL: urlPostgres ?? "file:./teste.db",
+  DIRECT_URL: urlPostgres ?? "",
   STORAGE_DIR: path.join(raiz, "storage-teste"),
   APP_URL: `http://127.0.0.1:${porta}`,
   AUTH_URL: `http://127.0.0.1:${porta}`,
@@ -24,7 +29,7 @@ const env = {
 // Os testes nunca enviam e-mail de verdade, mesmo que o .env tenha SMTP configurado.
 for (const k of ["SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASS"]) env[k] = "";
 
-if (!env.DATABASE_URL.includes("teste")) throw new Error("Proteção: o servidor de teste só roda com o banco de teste.");
+if (!urlPostgres && !env.DATABASE_URL.includes("teste")) throw new Error("Proteção: o servidor de teste só roda com o banco de teste.");
 
 function rodar(comando, args) {
   const r = spawnSync(comando, args, { cwd: raiz, env, stdio: "inherit", shell: process.platform === "win32" });
@@ -37,7 +42,13 @@ function rodar(comando, args) {
 console.log("[teste] preparando banco e arquivos de teste…");
 rmSync(env.STORAGE_DIR, { recursive: true, force: true });
 mkdirSync(path.join(env.STORAGE_DIR, "uploads"), { recursive: true });
-rodar("npx", ["prisma", "migrate", "reset", "--force", "--skip-seed", "--skip-generate"]);
+if (urlPostgres) {
+  const schema = `--schema=${gerarSchemaPostgres(raiz)}`;
+  rodar("npx", ["prisma", "generate", schema]);
+  rodar("npx", ["prisma", "db", "push", "--force-reset", "--skip-generate", schema]);
+} else {
+  rodar("npx", ["prisma", "migrate", "reset", "--force", "--skip-seed", "--skip-generate"]);
+}
 rodar("npx", ["tsx", "prisma/seed.ts"]);
 rodar("npx", ["tsx", "prisma/seed-demo.ts"]);
 

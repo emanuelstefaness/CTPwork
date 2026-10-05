@@ -7,6 +7,7 @@ import { STATUS_ETAPA_LABEL } from "@/lib/constants";
 import { Avatar, Badge, EmptyState, FilterPills, PageHeader, SearchBox } from "@/components/ui";
 import { BellAlertIcon, BuildingLibraryIcon, CalendarDaysIcon } from "@heroicons/react/24/outline";
 import { formatarData } from "@/lib/formatters";
+import { contem } from "@/lib/busca";
 
 export const metadata: Metadata = { title: "Projetos" };
 
@@ -22,7 +23,7 @@ export default async function ProjetosPage({ searchParams }: { searchParams: Pro
     where: {
       ...filtroProjetosVisiveis(user),
       ...(busca
-        ? { OR: [{ codigo: { contains: busca } }, { contratante: { nome: { contains: busca } } }, { contratoOrigem: { objeto: { contains: busca } } }] }
+        ? { OR: [{ codigo: contem(busca) }, { contratante: { nome: contem(busca) } }, { contratoOrigem: { objeto: contem(busca) } }] }
         : {}),
     },
     orderBy: { createdAt: "desc" },

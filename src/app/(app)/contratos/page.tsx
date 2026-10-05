@@ -8,6 +8,7 @@ import { garantirEtapasDosContratos, progressoDoContrato, SITUACAO_CONTRATO } fr
 import { formatarRelativo } from "@/lib/formatters";
 import { Avatar, Badge, EmptyState, FilterPills, PageHeader, SearchBox } from "@/components/ui";
 import { ChevronRightIcon, PlusIcon } from "@heroicons/react/24/outline";
+import { contem } from "@/lib/busca";
 
 export const metadata: Metadata = { title: "Contratos" };
 
@@ -33,7 +34,7 @@ export default async function ContratosPage({
       where: {
         ...escopo,
         ...(tipo ? { fluxoId: tipo } : {}),
-        ...(busca ? { OR: [{ objeto: { contains: busca } }, { codigo: { contains: busca } }, { contratante: { nome: { contains: busca } } }] } : {}),
+        ...(busca ? { OR: [{ objeto: contem(busca) }, { codigo: contem(busca) }, { contratante: { nome: contem(busca) } }] } : {}),
       },
       orderBy: { createdAt: "desc" },
       include: {

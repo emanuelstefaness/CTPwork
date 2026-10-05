@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, useTransition, type ReactNode } from "reac
 import { useRouter } from "next/navigation";
 import { ArchiveBoxIcon, ArrowPathIcon, PaperAirplaneIcon, PaperClipIcon, XMarkIcon } from "@heroicons/react/24/outline";
 import { useEnvio } from "@/components/use-envio";
+import { limiteAnexoTexto } from "@/lib/limite-anexo";
 import { alterarStatusConversa, enviarMensagemConversa } from "@/lib/actions/conversas";
 
 /** Busca mensagens novas a cada 20 s enquanto a aba está visível (não é tempo real, mas quase). */
@@ -50,7 +51,7 @@ export function RespostaConversa({ conversaId, encerrada, destino }: { conversaI
         className="form-control resize-y text-sm"
       />
       <div className="mt-2 flex flex-wrap items-center gap-2">
-        <label className="secondary-button min-h-9 cursor-pointer px-3 py-1.5 text-xs" title="Anexar arquivo (até 20 MB)">
+        <label className="secondary-button min-h-9 cursor-pointer px-3 py-1.5 text-xs" title={`Anexar arquivo (até ${limiteAnexoTexto()})`}>
           <PaperClipIcon className="h-4 w-4" />
           <span className="max-w-[180px] truncate">{arquivo ?? "Anexar"}</span>
           <input type="file" name="arquivo" accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg" className="sr-only" onChange={(e) => setArquivo(e.target.files?.[0]?.name ?? null)} />

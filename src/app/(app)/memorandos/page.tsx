@@ -6,6 +6,7 @@ import { STATUS_MEMORANDO_LABEL } from "@/lib/constants";
 import { formatarRelativo } from "@/lib/formatters";
 import { Avatar, Badge, EmptyState, FilterPills, PageHeader, SearchBox } from "@/components/ui";
 import { ChevronRightIcon, PencilSquareIcon, PlusIcon } from "@heroicons/react/24/outline";
+import { contem } from "@/lib/busca";
 
 export const metadata: Metadata = { title: "Memorandos" };
 
@@ -31,7 +32,7 @@ export default async function MemorandosPage({
     prisma.memorando.findMany({
       where: {
         ...(status && FILTROS.includes(status as (typeof FILTROS)[number]) ? { status } : {}),
-        ...(busca ? { OR: [{ assunto: { contains: busca } }, { codigo: { contains: busca } }, { corpo: { contains: busca } }] } : {}),
+        ...(busca ? { OR: [{ assunto: contem(busca) }, { codigo: contem(busca) }, { corpo: contem(busca) }] } : {}),
       },
       orderBy: { createdAt: "desc" },
       include: { setores: { include: { setor: true } }, criadoPor: true, fluxoAssinatura: { include: { signatarios: true } } },

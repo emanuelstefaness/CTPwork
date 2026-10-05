@@ -73,6 +73,17 @@ npm run seed:demo
 | Colaborador CTP (Administrativo) | admin@ctp.org.br |
 | Usuário externo (município) | municipio@cilla.mg.gov.br |
 
+## Publicar na Vercel
+
+Na Vercel o sistema usa PostgreSQL (Neon) e Vercel Blob para os anexos, escolhidos sozinhos pelas
+variáveis de ambiente; no computador continua SQLite + `storage/`. Passo a passo completo em
+[docs/PUBLICAR-NA-VERCEL.md](docs/PUBLICAR-NA-VERCEL.md).
+
+- `vercel.json` manda a Vercel rodar `npm run vercel-build` (`scripts/vercel-build.mjs`): gera o schema PostgreSQL a partir de `prisma/schema.prisma` (`scripts/schema-postgres.mjs`), aplica com `prisma db push` (recusa mudanças que apagariam dados), cria a configuração base e o administrador no banco vazio (`prisma/seed-base.ts`, senha em `ADMIN_SENHA`) e faz o `next build`.
+- Anexos: `src/lib/arquivos.ts` grava no Blob privado quando há `BLOB_READ_WRITE_TOKEN`, senão em disco. O download continua passando por `/api/files/[id]`, com a checagem de permissão.
+- Limite de anexo: 4 MB na Vercel (teto de 4,5 MB por requisição da plataforma), 20 MB fora dela (`src/lib/limite-anexo.ts`).
+- Buscas sem diferenciar maiúsculas também no PostgreSQL (`src/lib/busca.ts`).
+
 ## Interface redesenhada
 
 - Dashboard executivo com indicadores, gráficos, prazos e atividades recentes.
@@ -282,6 +293,6 @@ Seguindo a seção 9 do prompt mestre ("siga o padrão recomendado, mas deixe co
 ## Não coberto neste MVP (próximos incrementos)
 
 - Edição simultânea em tempo real do mesmo rascunho por duas pessoas (hoje o fluxo é por vez/versão).
-- Infra de produção: PostgreSQL, anexos em armazenamento de objetos (S3 ou similar) e backup — hoje SQLite e disco local.
+- Infra de produção: migrações versionadas para PostgreSQL (hoje a publicação usa `prisma db push`) e rotina de backup do banco e dos anexos.
 - Assinatura com validade jurídica (ICP-Brasil / gov.br) — o provedor atual registra IP e horário.
 - Cronograma de atividades: implementado como lista ordenada por data (não um grid de calendário visual mês-a-mês).

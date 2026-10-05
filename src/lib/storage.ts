@@ -1,15 +1,12 @@
-import { mkdir, writeFile } from "fs/promises";
-import path from "path";
 import { prisma } from "@/lib/prisma";
-import { pastaUploads } from "@/lib/pastas";
+import { gravarArquivo } from "@/lib/arquivos";
+import { limiteAnexoBytes } from "@/lib/limite-anexo";
 
-/** Upload simples em disco local. Trocar por S3/blob storage é isolado a este módulo. */
+/** Valida e grava um anexo (disco local ou Vercel Blob, ver src/lib/arquivos.ts). */
 export async function salvarAnexo(file: File): Promise<string> {
-  const UPLOAD_DIR = pastaUploads();
-  await mkdir(UPLOAD_DIR, { recursive: true });
-  const maxBytes = 20 * 1024 * 1024;
+  const maxBytes = limiteAnexoBytes();
   const mimePermitidos = new Set(["application/pdf", "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "application/vnd.ms-excel", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "image/png", "image/jpeg"]);
-  if (file.size > maxBytes) throw new Error("O arquivo excede o limite de 20 MB.");
+  if (file.size > maxBytes) throw new Error(`O arquivo excede o limite de ${maxBytes / 1024 / 1024} MB.`);
   if (file.type && !mimePermitidos.has(file.type)) throw new Error("Tipo de arquivo não permitido.");
   const buffer = Buffer.from(await file.arrayBuffer());
   const anexo = await prisma.anexo.create({
@@ -20,7 +17,12 @@ export async function salvarAnexo(file: File): Promise<string> {
       tipoMime: file.type || "application/octet-stream",
     },
   });
-  await writeFile(path.join(UPLOAD_DIR, anexo.id), buffer, { flag: "wx" });
+  try {
+    await gravarArquivo(anexo.id, buffer, anexo.tipoMime);
+  } catch (e) {
+    await prisma.anexo.delete({ where: { id: anexo.id } }).catch(() => {});
+    throw e;
+  }
   await prisma.anexo.update({ where: { id: anexo.id }, data: { caminho: `/api/files/${anexo.id}` } });
   return anexo.id;
 }

@@ -2,9 +2,12 @@ import type { PrismaClient } from "@prisma/client";
 
 /**
  * Configuração base do sistema — o que ele precisa para funcionar sem nenhum dado de exemplo:
- * tipos de projeto com suas etapas, setores e modelos de formulário. Perfis de fábrica e o tipo de
- * contrato Padrão vêm das migrações. Usado pelo banco limpo (seed-base.ts) e pelo seed de demonstração.
- * Idempotente: update espelha create, para reaplicar a base corrige nome/ordem/funções das etapas.
+ * perfis de fábrica, tipo de contrato Padrão, tipos de projeto com suas etapas, setores e modelos de
+ * formulário. Usado pelo banco limpo (seed-base.ts), pelo seed de demonstração e na publicação
+ * (scripts/vercel-build.mjs).
+ * Perfis e tipo de contrato Padrão: no SQLite já vêm das migrações; no PostgreSQL o banco nasce do
+ * schema (db push), sem elas — por isso são criados aqui só se faltarem, sem tocar no que o gestor editou.
+ * Tipos de projeto: update espelha create, então reaplicar a base corrige nome/ordem/funções das etapas.
  */
 
 type EtapaBase = {
@@ -30,9 +33,63 @@ async function semearTipoProjeto(prisma: PrismaClient, chave: string, nome: stri
   return tipo;
 }
 
+const PERFIS_DE_FABRICA = [
+  {
+    id: "perfil-gestor", nome: "Gestor", descricao: "Acesso completo, inclusive Cadastros.", tipo: "INTERNO",
+    permissoes: ["painel", "minuta.escrever", "contrato.gerenciar", "projeto.gerenciar", "projeto.reabrir", "memorando.gerenciar", "cadastros"],
+  },
+  {
+    id: "perfil-colaborador", nome: "Colaborador", descricao: "Trabalha em contratos, projetos e minutas; sem acesso a Cadastros.", tipo: "INTERNO",
+    permissoes: ["painel", "minuta.escrever", "contrato.gerenciar", "projeto.gerenciar"],
+  },
+  {
+    id: "perfil-municipio", nome: "Município", descricao: "Usuário da prefeitura: revisa minutas, dá parecer, assina e envia documentos.", tipo: "EXTERNO",
+    permissoes: ["contrato.assinar", "minuta.revisar", "minuta.parecer", "etapa.enviar", "contrato.aprovar"],
+  },
+];
+
+type DocPadrao = { nome: string; enviaQuem: "PREFEITURA" | "CTP" };
+const ETAPAS_CONTRATO_PADRAO: { chave: string; nome: string; curto: string; exigeAssinaturas?: boolean; liberaProjeto?: boolean; concluidaPelaPrefeitura?: boolean; documentos?: DocPadrao[] }[] = [
+  { chave: "PEDIDO_ORCAMENTO", nome: "Pedido de orçamento", curto: "Pedido" },
+  { chave: "EMISSAO_ORCAMENTO", nome: "Emissão de orçamento", curto: "Orçamento", documentos: [{ nome: "Proposta de orçamento", enviaQuem: "CTP" }] },
+  { chave: "APROVACAO_ORCAMENTO", nome: "Aprovação do orçamento", curto: "Aprovação", concluidaPelaPrefeitura: true },
+  {
+    chave: "DOCUMENTOS_CONTRATACAO", nome: "Documentos para contratação", curto: "Documentos",
+    documentos: [
+      { nome: "Termo de referência assinado", enviaQuem: "PREFEITURA" },
+      { nome: "Declaração de dotação orçamentária", enviaQuem: "PREFEITURA" },
+      { nome: "Portaria de designação do fiscal do contrato", enviaQuem: "PREFEITURA" },
+      { nome: "Certidões de regularidade fiscal e trabalhista", enviaQuem: "CTP" },
+      { nome: "Contrato social e cartão CNPJ", enviaQuem: "CTP" },
+    ],
+  },
+  { chave: "TERMO_REFERENCIA_MINUTA", nome: "Contrato e termo de referência — minuta", curto: "Minuta", exigeAssinaturas: true },
+  { chave: "TERMO_REFERENCIA_ASSINADO", nome: "Contrato e termo de referência — assinado", curto: "Assinado", liberaProjeto: true },
+];
+
+async function semearPerfisEFluxoPadrao(prisma: PrismaClient) {
+  for (const { permissoes, ...perfil } of PERFIS_DE_FABRICA) {
+    const existe = await prisma.perfil.findFirst({ where: { OR: [{ id: perfil.id }, { nome: perfil.nome }] } });
+    if (!existe) await prisma.perfil.create({ data: { ...perfil, permissoes: JSON.stringify(permissoes), sistema: true } });
+  }
+  const fluxoId = "fluxo-contrato-padrao";
+  if (await prisma.fluxoContrato.findFirst({ where: { OR: [{ id: fluxoId }, { nome: "Padrão" }] } })) return;
+  await prisma.fluxoContrato.create({
+    data: {
+      id: fluxoId, nome: "Padrão", descricao: "Do pedido de orçamento à assinatura do contrato e termo de referência.",
+      etapas: {
+        create: ETAPAS_CONTRATO_PADRAO.map(({ documentos, ...etapa }, ordem) => ({
+          id: `efc-padrao-${ordem + 1}`, ordem, ...etapa, documentosPadrao: JSON.stringify(documentos ?? []),
+        })),
+      },
+    },
+  });
+}
+
 export const SETORES_BASE = ["Administrativo", "Comunicação", "Jurídico", "Técnico"];
 
 export async function semearConfiguracaoBase(prisma: PrismaClient) {
+  await semearPerfisEFluxoPadrao(prisma);
   await semearTipoProjeto(prisma, "ESTATUTO_PCCS", "Estatuto e PCCS", [
     { nome: "Informações iniciais", temInformacoesProjeto: true },
     { nome: "Documentos iniciais", temFormulario: true, temChecklist: true },

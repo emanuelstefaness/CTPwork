@@ -44,6 +44,8 @@ next-env.d.ts
 # database (SQLite dev) and uploaded files
 /prisma/dev.db
 /prisma/dev.db-journal
+# schema PostgreSQL gerado na publicação (scripts/vercel-build.mjs)
+/prisma/postgres/
 /storage/uploads/*
 !/storage/uploads/.gitkeep
 # e-mails gravados em disco quando não há SMTP (contêm links de redefinição de senha)

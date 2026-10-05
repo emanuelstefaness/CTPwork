@@ -6,6 +6,7 @@ import { estaNaoLida, filtroVisibilidade, incluirEstadoLeitura } from "@/lib/con
 import { formatarRelativo } from "@/lib/formatters";
 import { Avatar, EmptyState, FilterPills, PageHeader, SearchBox } from "@/components/ui";
 import { ChatBubbleLeftRightIcon, ChevronRightIcon, LinkIcon, PaperClipIcon, PlusIcon } from "@heroicons/react/24/outline";
+import { contem } from "@/lib/busca";
 
 export const metadata: Metadata = { title: "Conversas" };
 
@@ -22,7 +23,7 @@ export default async function ConversasPage({ searchParams }: { searchParams: Pr
   const conversas = await prisma.conversa.findMany({
     where: {
       ...filtroVisibilidade(user),
-      ...(busca ? { OR: [{ assunto: { contains: busca } }, { municipio: { nome: { contains: busca } } }] } : {}),
+      ...(busca ? { OR: [{ assunto: contem(busca) }, { municipio: { nome: contem(busca) } }] } : {}),
     },
     orderBy: { ultimaMensagemEm: "desc" },
     include: {
