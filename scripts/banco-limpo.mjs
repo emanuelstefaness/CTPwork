@@ -5,7 +5,7 @@
  * Para voltar aos dados de demonstração: npm run seed && npm run seed:demo && npm run seed:vitrine
  */
 import { spawnSync } from "node:child_process";
-import { existsSync, rmSync } from "node:fs";
+import { existsSync, readdirSync, rmSync } from "node:fs";
 import path from "node:path";
 
 const raiz = process.cwd();
@@ -18,11 +18,14 @@ function rodar(comando, args) {
 
 rodar("npx", ["prisma", "migrate", "reset", "--force", "--skip-seed"]);
 
-// Anexos e e-mails gravados localmente pertenciam aos dados apagados.
+// Anexos e e-mails gravados localmente pertenciam aos dados apagados (o .gitkeep da pasta fica).
 const storage = process.env.STORAGE_DIR ?? path.join(raiz, "storage");
 for (const pasta of ["uploads", "emails"]) {
   const alvo = path.join(storage, pasta);
-  if (existsSync(alvo)) rmSync(alvo, { recursive: true, force: true });
+  if (!existsSync(alvo)) continue;
+  for (const item of readdirSync(alvo)) {
+    if (item !== ".gitkeep") rmSync(path.join(alvo, item), { recursive: true, force: true });
+  }
 }
 
 rodar("npx", ["tsx", "prisma/seed-base.ts"]);
