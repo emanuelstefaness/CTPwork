@@ -289,6 +289,13 @@ export default async function EtapaPanel({ etapaId, projeto }: { etapaId: string
     const podeConcluir = !!avaliacaoAtual && avaliacaoAtual.status !== "PENDENTE";
     return <>
       {StatusActions()}
+      {/* Etapa de revisão que também pede documentos ou formulário: eles vêm antes do editor. */}
+      {(etapa.temChecklist || (etapa.temFormulario && !!modelo)) && (
+        <div className="mb-5 space-y-5">
+          {etapa.temChecklist && Checklist()}
+          {etapa.temFormulario && Formulario()}
+        </div>
+      )}
       <DocumentoWorkspace etapaId={etapaId} versoes={versoes} usuario={{ id: user.id, nome: user.name ?? "Usuário", tipo: user.tipo, permissoes: user.permissoes }} tipoLabel={projeto.tipoLabel} />
       {gerencia && ultimaEnviada && etapa.status !== "CONCLUIDA" && (
         <div className="mt-5 flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white px-5 py-4 sm:flex-row sm:items-center sm:justify-between">

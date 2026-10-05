@@ -8,6 +8,7 @@ import { getSignatureProvider } from "@/lib/signature/provider";
 import { FLUXO_PADRAO_ID, garantirEtapasDosContratos, podeAvancarEtapa, progressoDoContrato } from "@/lib/fluxo-contrato";
 import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
+import { lerDocumentosPadrao } from "@/lib/documentos-padrao";
 import { redirect } from "next/navigation";
 
 export async function criarContrato(formData: FormData) {
@@ -243,6 +244,13 @@ export async function criarProjetoDoContrato(formData: FormData) {
     },
     include: { etapas: true },
   });
+
+  // Documentos que o modelo pede por padrão em cada etapa (Cadastros › Fluxos de projeto).
+  const pedidos = tipoModelo.etapas.flatMap((modelo, i) => {
+    const etapa = projeto.etapas.find((e) => e.ordem === i);
+    return etapa && modelo.temChecklist ? lerDocumentosPadrao(modelo.documentosPadrao).map((nome) => ({ etapaId: etapa.id, nome })) : [];
+  });
+  if (pedidos.length) await prisma.checklistItem.createMany({ data: pedidos });
 
   // Herda anexos do contrato por referência (não duplica arquivo).
   if (contrato.anexos.length > 0) {

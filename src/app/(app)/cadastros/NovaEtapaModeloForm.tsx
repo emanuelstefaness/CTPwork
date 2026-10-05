@@ -28,9 +28,11 @@ export default function NovaEtapaModeloForm({
   action: (formData: FormData) => Promise<Resultado<unknown>>;
 }) {
   const [temRevisao, setTemRevisao] = useState(false);
+  const [temChecklist, setTemChecklist] = useState(false);
   const { onSubmit, pendente, erro } = useEnvio(action, (form) => {
     form.reset();
     setTemRevisao(false);
+    setTemChecklist(false);
   });
 
   return (
@@ -51,13 +53,23 @@ export default function NovaEtapaModeloForm({
           <DocumentTextIcon className="h-4 w-4 text-blue-600" /> Formulário para o município
         </label>
         <label className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600">
-          <input type="checkbox" name="temChecklist" className="h-3.5 w-3.5" />
+          <input type="checkbox" name="temChecklist" checked={temChecklist} onChange={(e) => setTemChecklist(e.target.checked)} className="h-3.5 w-3.5" />
           <ClipboardDocumentCheckIcon className="h-4 w-4 text-violet-600" /> Checklist de documentos
         </label>
         <label className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600">
           <input type="checkbox" name="temRevisao" checked={temRevisao} onChange={(e) => setTemRevisao(e.target.checked)} className="h-3.5 w-3.5" />
           <PencilSquareIcon className="h-4 w-4 text-amber-600" /> Revisão de minuta
         </label>
+      </div>
+
+      <div className={`grid transition-all duration-200 ease-out ${temChecklist ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"}`}>
+        <div className="overflow-hidden">
+          <label className="block text-xs font-semibold text-slate-600">
+            Documentos pedidos por padrão <span className="font-normal text-slate-400">(um por linha)</span>
+            <textarea name="documentosPadrao" rows={3} placeholder={"Ex.: Ata da audiência pública\nLista de presença"} className="form-control mt-1 py-2 text-sm" />
+            <span className="mt-1 block font-normal text-slate-400">Entram no checklist de cada projeto novo; o CTP ainda pode pedir outros na etapa.</span>
+          </label>
+        </div>
       </div>
 
       <div className={`grid transition-all duration-200 ease-out ${temRevisao ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"}`}>

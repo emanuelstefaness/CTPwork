@@ -231,10 +231,16 @@ inconsistência já registrada na seção 9.1 do prompt mestre), então a sequê
 a reconstrução fiel a partir do conteúdo de cada tela, não do breadcrumb isolado:
 
 - **Estatuto e PCCS** (modo `ARTIGO`): Informações iniciais → Documentos iniciais → Diagnóstico inicial → Minutas versão 01 → Análise e devolutiva 01 → Minutas 02 → Devolutiva 02.
-- **Plano Diretor** (modo `DOCUMENTO_INTEIRO`): Informações iniciais → Documentos iniciais → Fase 01 → Fase 02 → Fase 03 → Fase 04 → Fase 5.
-- **Personalizado:** Informações iniciais → Documentos iniciais → Fase 01 (fluxo mínimo, sem wireframe de referência — conforme roadmap seção 13, item 9).
+- **Plano Diretor**: Informações iniciais → Documentos iniciais → Fase 01 — Leitura técnica e comunitária → Fase 02 — Diretrizes e propostas → Fase 03 — Minuta do projeto de lei → Fase 04 — Audiência pública (checklist: edital, ata, lista de presença) → Fase 05 — Versão final e envio à Câmara. Todas as fases, menos a 04, são entregas revisadas pela prefeitura no editor.
+- **Personalizado:** Informações iniciais → Documentos iniciais → Fase 01 (entrega revisada pela prefeitura).
+
+No Estatuto e PCCS, Diagnóstico inicial, Análise e devolutiva 01 e Devolutiva 02 também são entregas revisadas.
+Nenhuma etapa de modelo fica sem função: Cadastros marca "Sem função — só chat" quando isso acontece.
 
 Cada etapa carrega capacidades persistidas (`temInformacoesProjeto`, `temFormulario`, `temChecklist`, `temRevisao` em `EtapaProjeto`), não inferidas pelo nome — evita que uma etapa como "Fase 02" perca a revisão só por não ter "minuta" no nome. "Informações iniciais" é a etapa que mostra os dados do projeto (código/contratante/vigência, herdados do contrato) e o cronograma de atividades.
+
+- **Documentos pedidos por padrão** (`EtapaModelo.documentosPadrao`): com checklist ligado, a etapa do modelo lista documentos que entram no checklist de todo projeto novo.
+- **Aplicar aos projetos em andamento**: ao salvar uma etapa do modelo, as etapas **ainda não iniciadas** dos projetos desse tipo (achadas pelo nome anterior) recebem nome, funções e os documentos padrão que faltarem. Etapas iniciadas ou concluídas não mudam.
 
 ## Decisões e simplificações assumidas
 

@@ -660,6 +660,8 @@ model EtapaModelo {
   temChecklist        Boolean  @default(false)
   temRevisao          Boolean  @default(false)
   modoRevisao         String   @default("ARTIGO") // ARTIGO | DOCUMENTO_INTEIRO — só relevante quando temRevisao
+  // JSON string[]: documentos pedidos automaticamente no checklist quando o projeto é criado.
+  documentosPadrao    String   @default("[]")
   createdAt           DateTime @default(now())
 
   @@index([tipoProjetoModeloId, ordem])

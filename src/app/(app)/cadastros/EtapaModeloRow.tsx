@@ -16,6 +16,7 @@ import {
   XMarkIcon,
 } from "@heroicons/react/24/outline";
 import { Badge } from "@/components/ui";
+import { lerDocumentosPadrao } from "@/lib/documentos-padrao";
 
 type EtapaModelo = {
   id: string;
@@ -26,6 +27,7 @@ type EtapaModelo = {
   temChecklist: boolean;
   temRevisao: boolean;
   modoRevisao: string;
+  documentosPadrao: string;
 };
 
 function BotaoSalvar({ pending }: { pending: boolean }) {
@@ -54,6 +56,9 @@ export default function EtapaModeloRow({
 }) {
   const [editando, setEditando] = useState(false);
   const [temRevisao, setTemRevisao] = useState(etapa.temRevisao);
+  const [temChecklist, setTemChecklist] = useState(etapa.temChecklist);
+  const documentos = lerDocumentosPadrao(etapa.documentosPadrao);
+  const semFuncao = !etapa.temInformacoesProjeto && !etapa.temFormulario && !etapa.temChecklist && !etapa.temRevisao;
   const [removendo, setRemovendo] = useState(false);
   const [pending, startTransition] = useTransition();
   const { onSubmit, pendente: salvando, erro } = useEnvio(atualizar, () => setEditando(false));
@@ -77,11 +82,9 @@ export default function EtapaModeloRow({
           <div className="flex flex-wrap gap-1.5">
             {etapa.temInformacoesProjeto && <Badge tone="cyan">Dados + cronograma</Badge>}
             {etapa.temFormulario && <Badge tone="blue">Formulário</Badge>}
-            {etapa.temChecklist && <Badge tone="violet">Checklist</Badge>}
+            {etapa.temChecklist && <Badge tone="violet">Checklist{documentos.length ? ` · ${documentos.length} doc. padrão` : ""}</Badge>}
             {etapa.temRevisao && <Badge tone="amber">Revisão de documento</Badge>}
-            {!etapa.temInformacoesProjeto && !etapa.temFormulario && !etapa.temChecklist && !etapa.temRevisao && (
-              <span className="text-[11px] text-slate-400">Sem capacidades extras</span>
-            )}
+            {semFuncao && <Badge tone="red">Sem função — só chat</Badge>}
           </div>
           <div className="ml-auto flex shrink-0 items-center gap-1">
             <button
@@ -140,7 +143,7 @@ export default function EtapaModeloRow({
                 <DocumentTextIcon className="h-4 w-4 text-blue-600" /> Formulário para o município
               </label>
               <label className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600">
-                <input type="checkbox" name="temChecklist" defaultChecked={etapa.temChecklist} className="h-3.5 w-3.5" />
+                <input type="checkbox" name="temChecklist" checked={temChecklist} onChange={(e) => setTemChecklist(e.target.checked)} className="h-3.5 w-3.5" />
                 <ClipboardDocumentCheckIcon className="h-4 w-4 text-violet-600" /> Checklist de documentos
               </label>
               <label className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600">
@@ -156,6 +159,16 @@ export default function EtapaModeloRow({
             </div>
           </div>
 
+          <div className={`grid transition-all duration-200 ease-out ${temChecklist ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"}`}>
+            <div className="overflow-hidden">
+              <label className="block text-xs font-semibold text-slate-600">
+                Documentos pedidos por padrão <span className="font-normal text-slate-400">(um por linha)</span>
+                <textarea name="documentosPadrao" rows={3} defaultValue={documentos.join("\n")} placeholder={"Ex.: Ata da audiência pública\nLista de presença"} className="form-control mt-1 py-2 text-sm" />
+                <span className="mt-1 block font-normal text-slate-400">Entram no checklist de cada projeto novo; o CTP ainda pode pedir outros na etapa.</span>
+              </label>
+            </div>
+          </div>
+
           <div className={`grid transition-all duration-200 ease-out ${temRevisao ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"}`}>
             <div className="overflow-hidden">
               <input type="hidden" name="modoRevisao" value="DOCUMENTO_INTEIRO" />
@@ -164,6 +177,11 @@ export default function EtapaModeloRow({
               </p>
             </div>
           </div>
+
+          <label className="flex items-start gap-2 text-xs text-slate-600">
+            <input type="checkbox" name="aplicarAosProjetos" defaultChecked className="mt-0.5 h-3.5 w-3.5" />
+            <span>Aplicar também às etapas <strong>ainda não iniciadas</strong> dos projetos em andamento deste tipo. Etapas iniciadas ou concluídas não mudam.</span>
+          </label>
 
           {erro && <p className="text-xs text-red-600">{erro}</p>}
 

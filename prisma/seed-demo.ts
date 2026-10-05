@@ -146,7 +146,7 @@ async function semearContratos() {
 
 // ───────────────────────────── projetos, etapas, checklist, formulário, cronograma ─────────────────────────────
 
-type ChecklistSpec = { id: string; nome: string; chave: ChaveChecklist; status: "PENDENTE" | "ENVIADO" | "APROVADO"; enviado?: string };
+type ChecklistSpec = { id: string; nome: string; chave?: ChaveChecklist; status: "PENDENTE" | "ENVIADO" | "APROVADO"; enviado?: string };
 type EtapaSpec = {
   id: string; ordem: number; nome: string; status: Status; prazo?: string; resp: Usuario; modo: "ARTIGO" | "DOCUMENTO_INTEIRO";
   info?: boolean; form?: boolean; check?: boolean; rev?: boolean;
@@ -223,11 +223,16 @@ const PROJETOS: ProjetoSpec[] = [
           responsavel_contato: "Marina Kowalski — Secretária de Administração — (42) 3621-3000",
         } },
       },
-      { id: "etapa-pd-fase1-demo", ordem: 3, nome: "Fase 01", status: "AGUARDANDO_MUNICIPIO", prazo: "2026-09-10T12:00:00Z", resp: "bruno", modo: "DOCUMENTO_INTEIRO", rev: true },
-      { id: "etapa-pd-fase2-demo", ordem: 4, nome: "Fase 02", status: "NAO_INICIADA", prazo: "2026-11-06T12:00:00Z", resp: "bruno", modo: "DOCUMENTO_INTEIRO" },
-      { id: "etapa-pd-fase3-demo", ordem: 5, nome: "Fase 03", status: "NAO_INICIADA", prazo: "2026-12-18T12:00:00Z", resp: "bruno", modo: "DOCUMENTO_INTEIRO" },
-      { id: "etapa-pd-fase4-demo", ordem: 6, nome: "Fase 04", status: "NAO_INICIADA", prazo: "2027-02-12T12:00:00Z", resp: "bruno", modo: "DOCUMENTO_INTEIRO" },
-      { id: "etapa-pd-fase5-demo", ordem: 7, nome: "Fase 5", status: "NAO_INICIADA", prazo: "2027-03-26T12:00:00Z", resp: "bruno", modo: "DOCUMENTO_INTEIRO" },
+      { id: "etapa-pd-fase1-demo", ordem: 3, nome: "Fase 01 — Leitura técnica e comunitária", status: "AGUARDANDO_MUNICIPIO", prazo: "2026-09-10T12:00:00Z", resp: "bruno", modo: "DOCUMENTO_INTEIRO", rev: true },
+      { id: "etapa-pd-fase2-demo", ordem: 4, nome: "Fase 02 — Diretrizes e propostas", status: "NAO_INICIADA", prazo: "2026-11-06T12:00:00Z", resp: "bruno", modo: "DOCUMENTO_INTEIRO", rev: true },
+      { id: "etapa-pd-fase3-demo", ordem: 5, nome: "Fase 03 — Minuta do projeto de lei", status: "NAO_INICIADA", prazo: "2026-12-18T12:00:00Z", resp: "bruno", modo: "ARTIGO", rev: true },
+      { id: "etapa-pd-fase4-demo", ordem: 6, nome: "Fase 04 — Audiência pública", status: "NAO_INICIADA", prazo: "2027-02-12T12:00:00Z", resp: "bruno", modo: "DOCUMENTO_INTEIRO", check: true,
+      checklist: [
+        { id: "check-pd-guar-aud-edital", nome: "Edital de convocação da audiência pública", status: "PENDENTE" },
+        { id: "check-pd-guar-aud-ata", nome: "Ata da audiência pública", status: "PENDENTE" },
+        { id: "check-pd-guar-aud-presenca", nome: "Lista de presença", status: "PENDENTE" },
+      ] },
+      { id: "etapa-pd-fase5-demo", ordem: 7, nome: "Fase 05 — Versão final e envio à Câmara", status: "NAO_INICIADA", prazo: "2027-03-26T12:00:00Z", resp: "bruno", modo: "DOCUMENTO_INTEIRO", rev: true },
     ],
     eventos: [
       { id: "ev-pd-kick", data: "2026-06-30T12:00:00Z", titulo: "Reunião de kick-off do Plano Diretor", descricao: "Apresentação da metodologia e do cronograma às secretarias envolvidas.", resp: "Bruno Técnico" },
@@ -266,11 +271,11 @@ const PROJETOS: ProjetoSpec[] = [
           responsavel_contato: "Helena Bittencourt — Secretária de Administração — (46) 3232-1200",
         } },
       },
-      { id: "etapa-mar-diag", ordem: 2, nome: "Diagnóstico inicial", status: "NAO_INICIADA", prazo: "2026-10-30T12:00:00Z", resp: "bruno", modo: "ARTIGO" },
+      { id: "etapa-mar-diag", ordem: 2, nome: "Diagnóstico inicial", status: "NAO_INICIADA", prazo: "2026-10-30T12:00:00Z", resp: "bruno", modo: "DOCUMENTO_INTEIRO", rev: true },
       { id: "etapa-mar-min1", ordem: 3, nome: "Minutas versão 01", status: "NAO_INICIADA", prazo: "2026-12-11T12:00:00Z", resp: "bruno", modo: "ARTIGO", rev: true },
-      { id: "etapa-mar-dev1", ordem: 4, nome: "Análise e devolutiva 01", status: "NAO_INICIADA", prazo: "2027-01-22T12:00:00Z", resp: "bruno", modo: "ARTIGO" },
+      { id: "etapa-mar-dev1", ordem: 4, nome: "Análise e devolutiva 01", status: "NAO_INICIADA", prazo: "2027-01-22T12:00:00Z", resp: "bruno", modo: "DOCUMENTO_INTEIRO", rev: true },
       { id: "etapa-mar-min2", ordem: 5, nome: "Minutas 02", status: "NAO_INICIADA", prazo: "2027-03-12T12:00:00Z", resp: "bruno", modo: "ARTIGO", rev: true },
-      { id: "etapa-mar-dev2", ordem: 6, nome: "Devolutiva 02", status: "NAO_INICIADA", prazo: "2027-04-30T12:00:00Z", resp: "bruno", modo: "ARTIGO" },
+      { id: "etapa-mar-dev2", ordem: 6, nome: "Devolutiva 02", status: "NAO_INICIADA", prazo: "2027-04-30T12:00:00Z", resp: "bruno", modo: "DOCUMENTO_INTEIRO", rev: true },
     ],
     eventos: [
       { id: "ev-mar-kick", data: "2026-08-03T12:00:00Z", titulo: "Kick-off por videoconferência", descricao: "Apresentação da equipe e do cronograma ao Prefeito e às secretarias.", resp: "Ana Coordenadora" },
@@ -293,11 +298,16 @@ const PROJETOS: ProjetoSpec[] = [
           responsavel_contato: "Juliana Menegatti — Diretora de Planejamento Urbano — (46) 3220-1500",
         } },
       },
-      { id: "etapa-pb-fase1", ordem: 2, nome: "Fase 01", status: "AGUARDANDO_MUNICIPIO", prazo: "2026-10-02T12:00:00Z", resp: "ana", modo: "DOCUMENTO_INTEIRO", rev: true },
-      { id: "etapa-pb-fase2", ordem: 3, nome: "Fase 02", status: "NAO_INICIADA", prazo: "2026-11-27T12:00:00Z", resp: "ana", modo: "DOCUMENTO_INTEIRO" },
-      { id: "etapa-pb-fase3", ordem: 4, nome: "Fase 03", status: "NAO_INICIADA", prazo: "2027-01-29T12:00:00Z", resp: "ana", modo: "DOCUMENTO_INTEIRO" },
-      { id: "etapa-pb-fase4", ordem: 5, nome: "Fase 04", status: "NAO_INICIADA", prazo: "2027-03-19T12:00:00Z", resp: "ana", modo: "DOCUMENTO_INTEIRO" },
-      { id: "etapa-pb-fase5", ordem: 6, nome: "Fase 5", status: "NAO_INICIADA", prazo: "2027-04-23T12:00:00Z", resp: "ana", modo: "DOCUMENTO_INTEIRO" },
+      { id: "etapa-pb-fase1", ordem: 2, nome: "Fase 01 — Leitura técnica e comunitária", status: "AGUARDANDO_MUNICIPIO", prazo: "2026-10-02T12:00:00Z", resp: "ana", modo: "DOCUMENTO_INTEIRO", rev: true },
+      { id: "etapa-pb-fase2", ordem: 3, nome: "Fase 02 — Diretrizes e propostas", status: "NAO_INICIADA", prazo: "2026-11-27T12:00:00Z", resp: "ana", modo: "DOCUMENTO_INTEIRO", rev: true },
+      { id: "etapa-pb-fase3", ordem: 4, nome: "Fase 03 — Minuta do projeto de lei", status: "NAO_INICIADA", prazo: "2027-01-29T12:00:00Z", resp: "ana", modo: "ARTIGO", rev: true },
+      { id: "etapa-pb-fase4", ordem: 5, nome: "Fase 04 — Audiência pública", status: "NAO_INICIADA", prazo: "2027-03-19T12:00:00Z", resp: "ana", modo: "DOCUMENTO_INTEIRO", check: true,
+      checklist: [
+        { id: "check-pb-aud-edital", nome: "Edital de convocação da audiência pública", status: "PENDENTE" },
+        { id: "check-pb-aud-ata", nome: "Ata da audiência pública", status: "PENDENTE" },
+        { id: "check-pb-aud-presenca", nome: "Lista de presença", status: "PENDENTE" },
+      ] },
+      { id: "etapa-pb-fase5", ordem: 6, nome: "Fase 05 — Versão final e envio à Câmara", status: "NAO_INICIADA", prazo: "2027-04-23T12:00:00Z", resp: "ana", modo: "DOCUMENTO_INTEIRO", rev: true },
     ],
     eventos: [
       { id: "ev-pb-kick", data: "2026-06-24T12:00:00Z", titulo: "Reunião de kick-off", descricao: "Apresentação do cronograma ao Prefeito e ao Conselho da Cidade.", resp: "Ana Coordenadora" },
@@ -325,7 +335,7 @@ const PROJETOS: ProjetoSpec[] = [
           responsavel_contato: "Tatiane Wolff — Secretária de Obras — (46) 3232-8000",
         } },
       },
-      { id: "etapa-cv-fase1", ordem: 2, nome: "Fase 01", status: "EM_ANDAMENTO", prazo: "2026-10-16T12:00:00Z", resp: "bruno", modo: "ARTIGO" },
+      { id: "etapa-cv-fase1", ordem: 2, nome: "Fase 01", status: "EM_ANDAMENTO", prazo: "2026-10-16T12:00:00Z", resp: "bruno", modo: "DOCUMENTO_INTEIRO", rev: true },
     ],
     eventos: [
       { id: "ev-cv-kick", data: "2026-08-07T12:00:00Z", titulo: "Abertura do projeto", descricao: "Alinhamento inicial com a Secretaria de Obras.", resp: "Ana Coordenadora" },
@@ -351,7 +361,7 @@ async function semearProjetos() {
 
       for (const c of e.checklist ?? []) {
         let arquivoId: string | null = null;
-        if (c.status !== "PENDENTE" && c.enviado) {
+        if (c.status !== "PENDENTE" && c.enviado && c.chave) {
           arquivoId = await anexo(`anexo-${c.id}`, `${c.nome.replace(/[^\p{L}\p{N}]+/gu, "_")}.pdf`, blocosDeDoc(docChecklist(c.chave, municipio)), c.enviado);
         }
         const dadosItem = { etapaId: e.id, nome: c.nome, status: c.status, arquivoId, createdAt: d(p.criado) };

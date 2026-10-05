@@ -7,6 +7,7 @@ import { registrarAuditoria } from "@/lib/audit";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { chaveDaEtapa } from "@/lib/fluxo-contrato";
+import { documentosDoTexto, lerDocumentosPadrao } from "@/lib/documentos-padrao";
 import { lerPermissoes, permissoesDoTipo, type TipoPerfil } from "@/lib/permissoes";
 import { aindaHaAdministrador, MSG_SEM_ADMINISTRADOR } from "@/lib/usuarios-permissao";
 
@@ -115,7 +116,7 @@ export async function criarPrefeitura(formData: FormData) {
           chave: chaveProjeto,
           municipioId: m.id,
           etapas: {
-            create: tipoBase.etapas.map(({ ordem, nome, temInformacoesProjeto, temFormulario, temChecklist, temRevisao, modoRevisao }) => ({ ordem, nome, temInformacoesProjeto, temFormulario, temChecklist, temRevisao, modoRevisao })),
+            create: tipoBase.etapas.map(({ ordem, nome, temInformacoesProjeto, temFormulario, temChecklist, temRevisao, modoRevisao, documentosPadrao }) => ({ ordem, nome, temInformacoesProjeto, temFormulario, temChecklist, temRevisao, modoRevisao, documentosPadrao })),
           },
         },
       });
@@ -560,14 +561,44 @@ export async function renomearTipoProjeto(formData: FormData) {
 }
 
 function lerCapacidadesEtapa(formData: FormData) {
+  const temChecklist = formData.get("temChecklist") === "on";
   return {
     nome: String(formData.get("nome") ?? "").trim(),
     modoRevisao: String(formData.get("modoRevisao") ?? "ARTIGO"),
     temInformacoesProjeto: formData.get("temInformacoesProjeto") === "on",
     temFormulario: formData.get("temFormulario") === "on",
-    temChecklist: formData.get("temChecklist") === "on",
+    temChecklist,
     temRevisao: formData.get("temRevisao") === "on",
+    // Sem checklist não há onde pedir documentos: a lista só vale com ele ligado.
+    documentosPadrao: JSON.stringify(temChecklist ? documentosDoTexto(String(formData.get("documentosPadrao") ?? "")) : []),
   };
+}
+
+/**
+ * Leva o modelo atualizado às etapas ainda NÃO INICIADAS dos projetos desse tipo (achadas pelo
+ * nome que a etapa tinha antes da edição): nome, funções e documentos padrão que faltarem no
+ * checklist. Etapas iniciadas ou concluídas ficam como estão — já há trabalho nelas.
+ */
+async function aplicarModeloAsEtapasNaoIniciadas(chaveTipo: string, nomeAnterior: string, dados: ReturnType<typeof lerCapacidadesEtapa>) {
+  const etapas = await prisma.etapaProjeto.findMany({
+    where: { nome: nomeAnterior, status: "NAO_INICIADA", projeto: { tipo: chaveTipo } },
+    include: { checklistItens: { select: { nome: true } } },
+  });
+  const documentos = lerDocumentosPadrao(dados.documentosPadrao);
+  for (const etapa of etapas) {
+    const jaPedidos = new Set(etapa.checklistItens.map((i) => i.nome.toLowerCase()));
+    await prisma.$transaction([
+      prisma.etapaProjeto.update({
+        where: { id: etapa.id },
+        data: {
+          nome: dados.nome, modoRevisao: dados.modoRevisao, temInformacoesProjeto: dados.temInformacoesProjeto,
+          temFormulario: dados.temFormulario, temChecklist: dados.temChecklist, temRevisao: dados.temRevisao,
+        },
+      }),
+      prisma.checklistItem.createMany({ data: documentos.filter((d) => !jaPedidos.has(d.toLowerCase())).map((nome) => ({ etapaId: etapa.id, nome })) }),
+    ]);
+  }
+  return etapas.length;
 }
 
 export async function criarEtapaModelo(formData: FormData) {
@@ -590,9 +621,17 @@ export async function atualizarEtapaModelo(formData: FormData) {
   const dados = lerCapacidadesEtapa(formData);
   if (!dados.nome) throw new Error("Nome da etapa é obrigatório.");
 
+  const anterior = await prisma.etapaModelo.findUniqueOrThrow({ where: { id: etapaModeloId }, include: { tipoProjetoModelo: { select: { chave: true } } } });
   await prisma.etapaModelo.update({ where: { id: etapaModeloId }, data: dados });
-  await registrarAuditoria({ userId: user.id, acao: "ATUALIZAR", entidadeTipo: "EtapaModelo", entidadeId: etapaModeloId, detalhe: dados.nome });
+  const aplicadas = formData.get("aplicarAosProjetos") === "on"
+    ? await aplicarModeloAsEtapasNaoIniciadas(anterior.tipoProjetoModelo.chave, anterior.nome, dados)
+    : 0;
+  await registrarAuditoria({
+    userId: user.id, acao: "ATUALIZAR", entidadeTipo: "EtapaModelo", entidadeId: etapaModeloId,
+    detalhe: aplicadas ? `${dados.nome} · aplicado a ${aplicadas} etapa(s) não iniciada(s)` : dados.nome,
+  });
   revalidatePath("/cadastros");
+  revalidatePath("/projetos", "layout");
 }
 
 export async function removerEtapaModelo(etapaModeloId: string) {
