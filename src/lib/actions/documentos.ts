@@ -10,7 +10,7 @@ import { capturar, ErroUsuario, type Resultado } from "@/lib/resultado";
 import { registrarAuditoria } from "@/lib/audit";
 import { lerDocumento, normalizarConteudo } from "@/lib/editor/servidor";
 import { ancoraValida, textoDoTrecho } from "@/lib/editor/ancoras";
-import { CORES_GRIFO, TIPO_ANOTACAO_LABEL, limparSugestao, type DecisaoSugestao, type TipoAnotacao } from "@/lib/editor/extensoes";
+import { CORES_GRIFO, DOCUMENTO_VAZIO, TIPO_ANOTACAO_LABEL, limparSugestao, type DecisaoSugestao, type TipoAnotacao } from "@/lib/editor/extensoes";
 
 /**
  * Fluxo do documento editado dentro do sistema:
@@ -70,7 +70,7 @@ export async function criarRascunho(etapaId: string): Promise<Resultado<{ id: st
     const titulo = base?.titulo ?? `Minuta — ${etapa.nome}`;
 
     const doc = await prisma.documentoVersionado.create({
-      data: { etapaId, versao, titulo, nomeArquivo: `${titulo} (v${versao})`, conteudo: base?.conteudo ?? null, criadoPorId: user.id },
+      data: { etapaId, versao, titulo, nomeArquivo: `${titulo} (v${versao})`, conteudo: base?.conteudo ?? JSON.stringify(DOCUMENTO_VAZIO), criadoPorId: user.id },
     });
     await registrarAuditoria({ userId: user.id, acao: "CRIAR_RASCUNHO", entidadeTipo: "DocumentoVersionado", entidadeId: doc.id, detalhe: `v${versao}` });
     revalidatePath(`/projetos/${etapa.projetoId}`);

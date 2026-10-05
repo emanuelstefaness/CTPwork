@@ -136,7 +136,8 @@ export function DocumentoWorkspace({
 
       {comparando ? (
         <ComparacaoVersoes versoes={visiveis} />
-      ) : selecionada.conteudo === null ? (
+      ) : selecionada.conteudo === null && selecionada.enviadoEm ? (
+        // Versão enviada antes do editor existir (só o arquivo). Rascunho sem texto abre o editor em branco.
         <div className="rounded-2xl border border-slate-200 bg-white px-6 py-12 text-center">
           <PaperClipIcon className="mx-auto h-8 w-8 text-slate-300" />
           <p className="mt-3 text-sm font-semibold text-slate-700">Versão {selecionada.versao} — enviada como arquivo anexo</p>
