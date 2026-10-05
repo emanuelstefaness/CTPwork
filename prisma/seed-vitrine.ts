@@ -1,6 +1,7 @@
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import { gravarPdf, type Bloco } from "./demo/pdf";
+import { semearRevisaoDaMinuta } from "./demo/processo";
 
 // Seed de VITRINE: mostra as funções de personalização sobre o cenário de demonstração —
 // perfis próprios, tipos de contrato (Dispensa, Termo aditivo), uma prefeitura com fluxos
@@ -50,6 +51,7 @@ const PERFIS = [
 // ───────────────────────────── tipos de contrato ─────────────────────────────
 
 type EnviaQuem = "PREFEITURA" | "CTP";
+type Entrega = { status: "ENVIADO" | "APROVADO"; quando: string } | { status: "RECUSADO"; motivo: string; quando: string };
 type EtapaSpec = {
   chave: string; nome: string; curto: string; assinaturas?: boolean; projeto?: boolean; soGestor?: boolean;
   /** Etapa decidida pela prefeitura (ex.: aprovação). */
@@ -114,8 +116,15 @@ async function semearFluxo(f: (typeof FLUXOS)[number]) {
 async function semearContrato(c: {
   id: string; codigo: string; objeto: string; contratanteId: string; fluxoId: string;
   responsavelId: string; concluidas: { por: string; em: string }[]; criadoEm: string; tags?: string[];
-  /** Situação de documentos da etapa atual (pelo nome); os não listados ficam pendentes. */
-  entregues?: Record<string, { status: "ENVIADO" | "APROVADO"; quando: string }>;
+  /**
+   * Situação de documentos da etapa atual (pelo nome); os não listados ficam pendentes. RECUSADO:
+   * o arquivo enviado fica no histórico do contrato e o documento volta a ser pedido, com o motivo.
+   */
+  entregues?: Record<string, Entrega>;
+  /** A prefeitura pediu revisão: o contrato voltou para a etapa atual com este motivo. */
+  devolucao?: string;
+  /** Arquivos antigos que ficam só no histórico (ex.: a 1ª versão do orçamento, substituída). */
+  historico?: { id: string; nome: string; quando: string; enviaQuem: EnviaQuem }[];
 }) {
   const fluxo = await prisma.fluxoContrato.findUniqueOrThrow({ where: { id: c.fluxoId }, include: { etapas: { orderBy: { ordem: "asc" } } } });
   const atual = fluxo.etapas[c.concluidas.length];
@@ -135,6 +144,7 @@ async function semearContrato(c: {
       ordem: e.ordem, nome: e.nome, curto: e.curto, exigeAssinaturas: e.exigeAssinaturas, liberaProjeto: e.liberaProjeto,
       perfisQueAvancam: e.perfisQueAvancam, concluidaPelaPrefeitura: e.concluidaPelaPrefeitura,
       concluidaEm: feito ? d(feito.em) : null, concluidaPorId: feito ? feito.por : null,
+      motivoDevolucao: c.devolucao && e.chave === atual.chave ? c.devolucao : null,
     };
     await prisma.etapaContrato.upsert({
       where: { contratoId_chave: { contratoId: c.id, chave: e.chave } },
@@ -143,20 +153,27 @@ async function semearContrato(c: {
     });
   }
 
-  // Documentos padrão da etapa atual em diante, como na criação pelo sistema.
-  for (const e of fluxo.etapas.slice(c.concluidas.length)) {
+  // Documentos padrão, como na criação pelo sistema: nas etapas já concluídas, todos entregues e
+  // aprovados; na atual, conforme `entregues`; nas seguintes, pendentes.
+  for (const e of fluxo.etapas) {
     const docs = JSON.parse(e.documentosPadrao) as { nome: string; enviaQuem: EnviaQuem }[];
+    const feito = c.concluidas[e.ordem];
     for (const [i, doc] of docs.entries()) {
       const id = `doc-${c.id}-${e.chave.toLowerCase()}-${i}`;
-      const entregue = e.chave === atual.chave ? c.entregues?.[doc.nome] : undefined;
-      const anexoId = entregue ? await anexoPdf(`anexo-${id}`, doc.nome, c, entregue.quando, doc.enviaQuem) : null;
+      const entregue: Entrega | undefined = feito ? { status: "APROVADO", quando: feito.em } : e.chave === atual.chave ? c.entregues?.[doc.nome] : undefined;
+      const anexo = entregue ? await anexoPdf(`anexo-${id}`, doc.nome, c, entregue.quando, doc.enviaQuem) : null;
+      const recusado = entregue?.status === "RECUSADO";
       const dados = {
         contratoId: c.id, etapaChave: e.chave, nome: doc.nome, enviaQuem: doc.enviaQuem,
-        status: entregue?.status ?? "PENDENTE", anexoId, enviadoEm: entregue ? d(entregue.quando) : null, motivoRecusa: null,
+        status: !entregue || recusado ? "PENDENTE" : entregue.status,
+        anexoId: recusado ? null : anexo, enviadoEm: entregue && !recusado ? d(entregue.quando) : null,
+        // Revisão pedida pela prefeitura: o que o CTP entregou na etapa volta a ser pedido, com o motivo.
+        motivoRecusa: recusado ? entregue.motivo : !entregue && c.devolucao && e.chave === atual.chave && doc.enviaQuem === "CTP" ? c.devolucao : null,
       };
       await prisma.documentoContrato.upsert({ where: { id }, update: dados, create: { id, ...dados } });
     }
   }
+  for (const h of c.historico ?? []) await anexoPdf(h.id, h.nome, c, h.quando, h.enviaQuem);
 }
 
 /** PDF simples de demonstração, ligado ao contrato (aparece em "Arquivos do contrato"). */
@@ -272,17 +289,58 @@ async function main() {
     fluxoId: "fluxo-clevelandia",
     responsavelId: ana.id,
     criadoEm: "2026-09-14T10:00:00-03:00",
+    // O orçamento foi e voltou: a 1ª proposta (22/09) teve revisão pedida pelo prefeito (24/09);
+    // a 2ª (26/09) foi aprovada por ele (29/09). Ver a conversa "Revisão do orçamento" abaixo.
     concluidas: [
       { por: ana.id, em: "2026-09-15T16:20:00-03:00" },
-      { por: bruno.id, em: "2026-09-22T11:05:00-03:00" },
+      { por: bruno.id, em: "2026-09-26T11:05:00-03:00" },
       { por: "user-vitrine-carlos", em: "2026-09-29T09:40:00-03:00" }, // aprovação do orçamento: o prefeito
     ],
     tags: ["Plano Diretor"],
+    historico: [
+      { id: "anexo-vitrine-clevelandia-orcamento-v1", nome: "Proposta de orçamento — versão 1 (substituída)", quando: "2026-09-22T11:00:00-03:00", enviaQuem: "CTP" },
+    ],
     entregues: {
       "Certidões de regularidade fiscal e trabalhista": { status: "APROVADO", quando: "2026-09-30T14:00:00-03:00" },
       "Contrato social e cartão CNPJ": { status: "APROVADO", quando: "2026-09-30T14:05:00-03:00" },
+      "Portaria de designação do fiscal do contrato": { status: "APROVADO", quando: "2026-10-01T09:35:00-03:00" },
+      "Declaração de dotação orçamentária": {
+        status: "RECUSADO", quando: "2026-10-01T09:30:00-03:00",
+        motivo: "Falta a assinatura do contador responsável e a indicação da rubrica (3.3.90.39 — Outros serviços de terceiros, PJ). Por favor, reenviem a declaração completa.",
+      },
       "Termo de referência assinado": { status: "ENVIADO", quando: "2026-10-02T10:20:00-03:00" },
     },
+  });
+  // Contrato aguardando o prefeito: ele aprova ou pede revisão ao entrar.
+  await semearContrato({
+    id: "contrato-vitrine-clevelandia-pccs",
+    codigo: "CTR-2026-037",
+    objeto: "Elaboração do Estatuto dos Servidores e do PCCS de Clevelândia",
+    contratanteId: CLEVELANDIA,
+    fluxoId: "fluxo-clevelandia",
+    responsavelId: bruno.id,
+    criadoEm: "2026-09-29T15:00:00-03:00",
+    concluidas: [
+      { por: bruno.id, em: "2026-09-30T10:00:00-03:00" },
+      { por: bruno.id, em: "2026-10-03T16:40:00-03:00" },
+    ],
+    tags: ["PCCS"],
+  });
+  // A prefeitura de Palmas não aprovou o orçamento: o contrato voltou para o CTP refazer.
+  await semearContrato({
+    id: "contrato-vitrine-palmas-saude",
+    codigo: "CTR-2026-038",
+    objeto: "Reestruturação do quadro de pessoal da Secretaria de Saúde de Palmas",
+    contratanteId: "municipio-palmas",
+    fluxoId: "fluxo-contrato-padrao",
+    responsavelId: ana.id,
+    criadoEm: "2026-09-21T09:30:00-03:00",
+    concluidas: [{ por: ana.id, em: "2026-09-22T14:00:00-03:00" }],
+    devolucao: "O valor de R$ 186.400,00 ficou acima da dotação reservada (R$ 150.000,00). Pedimos retirar o dimensionamento das unidades de saúde do interior ou dividir o serviço em duas etapas, com a segunda no exercício de 2027.",
+    historico: [
+      { id: "anexo-vitrine-palmas-saude-orcamento-v1", nome: "Proposta de orçamento — versão 1 (revisão pedida)", quando: "2026-09-29T17:10:00-03:00", enviaQuem: "CTP" },
+    ],
+    tags: ["Saúde", "Quadro de pessoal"],
   });
   await semearContrato({
     id: "contrato-vitrine-dispensa",
@@ -347,18 +405,49 @@ async function main() {
     lidaPor: [ana.id, eduardo.id],
   });
 
-  // Avisos no sino de quem pode destravar as etapas restritas ao Gestor.
+  await semearConversa({
+    id: "conversa-vitrine-clevelandia-orcamento",
+    municipioId: CLEVELANDIA,
+    assunto: "Revisão do orçamento do Plano Diretor",
+    contratoId: "contrato-vitrine-clevelandia",
+    status: "ENCERRADA",
+    mensagens: [
+      { autor: "user-vitrine-carlos", quando: "2026-09-24T10:12:00-03:00", texto: "Analisamos a proposta. Pedi revisão no sistema: as 4 oficinas comunitárias presenciais pesam muito no valor. Dá para fazer 2 presenciais e 2 on-line?" },
+      { autor: bruno.id, quando: "2026-09-24T14:30:00-03:00", texto: "Dá sim, prefeito. Refazemos com 2 oficinas presenciais (área urbana e zona rural) e 2 on-line. O valor cai de R$ 248.900,00 para R$ 221.300,00." },
+      { autor: bruno.id, quando: "2026-09-26T11:06:00-03:00", texto: "Nova proposta enviada no contrato. A versão anterior continua em \"Arquivos do contrato\" para comparação." },
+      { autor: "user-vitrine-carlos", quando: "2026-09-29T09:41:00-03:00", texto: "Aprovado. Obrigado pela agilidade!" },
+    ],
+    lidaPor: ["user-vitrine-carlos", bruno.id, ana.id],
+  });
+  await semearConversa({
+    id: "conversa-vitrine-palmas-saude",
+    municipioId: "municipio-palmas",
+    assunto: "Orçamento da reestruturação da Saúde",
+    contratoId: "contrato-vitrine-palmas-saude",
+    mensagens: [
+      { autor: eduardo.id, quando: "2026-10-02T16:05:00-03:00", texto: "Ana, devolvi o orçamento pelo sistema com o motivo. A Secretaria de Fazenda só consegue empenhar R$ 150 mil este ano." },
+      { autor: ana.id, quando: "2026-10-03T09:20:00-03:00", texto: "Entendido, Eduardo. Vamos propor duas etapas: sede em 2026 e unidades do interior em 2027. Enviamos a nova proposta até quarta." },
+    ],
+    lidaPor: [eduardo.id, ana.id],
+  });
+
+  await semearRevisaoDaMinuta(prisma, { ana: ana.id, bruno: bruno.id, carla: carla.id });
+
+  // Avisos no sino: o que cada um tem para fazer (dados de demonstração, nunca viram e-mail).
   const avisos = [
-    { id: "notif-vitrine-dispensa", mensagem: "CTR-2026-035 aguarda o parecer jurídico — etapa restrita ao perfil Gestor.", entidadeId: "contrato-vitrine-dispensa", quando: "2026-09-26T17:45:00-03:00" },
-    { id: "notif-vitrine-aditivo", mensagem: "CTR-2026-036 (aditivo de Guarapuava) aguarda aprovação da diretoria.", entidadeId: "contrato-vitrine-aditivo", quando: "2026-10-01T15:00:00-03:00" },
+    { id: "notif-vitrine-dispensa", userId: ana.id, mensagem: "CTR-2026-035 aguarda o parecer jurídico — etapa restrita ao perfil Gestor.", entidadeId: "contrato-vitrine-dispensa", quando: "2026-09-26T17:45:00-03:00" },
+    { id: "notif-vitrine-aditivo", userId: ana.id, mensagem: "CTR-2026-036 (aditivo de Guarapuava) aguarda aprovação da diretoria.", entidadeId: "contrato-vitrine-aditivo", quando: "2026-10-01T15:00:00-03:00" },
+    { id: "notif-vitrine-palmas-revisao", userId: ana.id, mensagem: 'A prefeitura pediu revisão em "Aprovação do orçamento" (contrato CTR-2026-038): o valor ficou acima da dotação reservada.', entidadeId: "contrato-vitrine-palmas-saude", quando: "2026-10-02T16:01:00-03:00" },
+    { id: "notif-vitrine-clev-termo", userId: ana.id, mensagem: 'O município enviou "Termo de referência assinado" no contrato CTR-2026-034.', entidadeId: "contrato-vitrine-clevelandia", quando: "2026-10-02T10:21:00-03:00" },
+    { id: "notif-vitrine-clev-dotacao", userId: "user-vitrine-beatriz", mensagem: 'O CTP pediu um novo envio de "Declaração de dotação orçamentária" (contrato CTR-2026-034): falta a assinatura do contador e a rubrica.', entidadeId: "contrato-vitrine-clevelandia", quando: "2026-10-01T15:12:00-03:00" },
+    { id: "notif-vitrine-clev-pccs", userId: "user-vitrine-carlos", mensagem: 'O contrato CTR-2026-037 (Estatuto e PCCS) aguarda sua aprovação do orçamento.', entidadeId: "contrato-vitrine-clevelandia-pccs", quando: "2026-10-03T16:41:00-03:00" },
   ];
   for (const a of avisos) {
-    // emailStatus IGNORADO: dado de demonstração, não deve virar e-mail.
-    const dados = { userId: ana.id, tipo: "CONTRATO", mensagem: a.mensagem, entidadeTipo: "Contrato", entidadeId: a.entidadeId, lida: false, emailStatus: "IGNORADO", createdAt: d(a.quando) };
+    const dados = { userId: a.userId, tipo: "CONTRATO", mensagem: a.mensagem, entidadeTipo: "Contrato", entidadeId: a.entidadeId, lida: false, emailStatus: "IGNORADO", createdAt: d(a.quando) };
     await prisma.notificacao.upsert({ where: { id: a.id }, update: dados, create: { id: a.id, ...dados } });
   }
 
-  console.log("Vitrine pronta: 3 perfis, 3 tipos de contrato (1 exclusivo), Prefeitura de Clevelândia com 2 acessos, 3 contratos e 3 conversas.");
+  console.log("Vitrine pronta: 3 perfis, 3 tipos de contrato (1 exclusivo), Prefeitura de Clevelândia com 2 acessos, 5 contratos com idas e vindas, 5 conversas e a revisão da minuta de Guarapuava.");
 }
 
 main()
