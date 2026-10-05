@@ -5,13 +5,15 @@ import { requireSession } from "@/lib/tenant";
 import { podeVerContrato } from "@/lib/visibilidade";
 import { lerIds, pode } from "@/lib/permissoes";
 
-import { garantirEtapasDosContratos, podeAvancarEtapa, progressoDoContrato } from "@/lib/fluxo-contrato";
-import { assinarContratoSeguro, criarProjetoDoContratoSeguro } from "@/lib/actions/formularios";
+import { garantirEtapasDosContratos, podeAprovarEtapa, podeAvancarEtapa, progressoDoContrato } from "@/lib/fluxo-contrato";
+import { aprovarEtapaContratoSeguro, assinarContratoSeguro, criarProjetoDoContratoSeguro, pedirRevisaoEtapaContratoSeguro } from "@/lib/actions/formularios";
+import { DocumentosDaEtapa } from "./DocumentosDaEtapa";
 import { FormSeguro } from "@/components/form-seguro";
 import { formatarDataHora, formatarDiaDoEvento, formatarRelativo } from "@/lib/formatters";
 import { notFound } from "next/navigation";
 import { Avatar, BackLink, Badge, DetailList, Panel } from "@/components/ui";
 import {
+  ArrowRightCircleIcon,
   ArrowTopRightOnSquareIcon,
   CheckIcon,
   ClockIcon,
@@ -45,6 +47,7 @@ export default async function ContratoDetailPage({ params }: { params: Promise<{
       fluxoAssinatura: { include: { signatarios: { include: { user: true }, orderBy: { createdAt: "asc" } } } },
       projetos: true,
       anexos: { orderBy: { createdAt: "asc" } },
+      documentos: { include: { anexo: { select: { id: true, nomeOriginal: true } } }, orderBy: { createdAt: "asc" } },
     },
   });
   if (!contrato) notFound();
@@ -72,6 +75,44 @@ export default async function ContratoDetailPage({ params }: { params: Promise<{
     include: { _count: { select: { etapas: true } } },
     orderBy: { nome: "asc" },
   }) : [];
+
+  // Documentos pedidos na etapa atual, aprovação pela prefeitura e o "próximo passo" de quem está vendo.
+  const enviaDocumentos = pode(user, "etapa.enviar");
+  const documentosEtapa = etapaAtual ? contrato.documentos.filter((d) => d.etapaChave === etapaAtual.chave) : [];
+  const emAberto = documentosEtapa.filter((d) => d.status !== "APROVADO");
+  const daPrefeituraPendentes = emAberto.filter((d) => d.enviaQuem === "PREFEITURA" && d.status === "PENDENTE");
+  const doCtpPendentes = emAberto.filter((d) => d.enviaQuem === "CTP");
+  const paraConferir = emAberto.filter((d) => d.status === "ENVIADO");
+  const etapaDaPrefeitura = !naEtapaFinal && !!etapaAtual?.concluidaPelaPrefeitura;
+  const aprova = !!etapaAtual && podeAprovarEtapa(user, etapaAtual);
+  const etapaAnterior = idxAtual > 0 ? contrato.etapas[idxAtual - 1] : null;
+  // O que a prefeitura analisa na aprovação: os arquivos entregues na etapa anterior (ex.: o orçamento).
+  const paraAnalisar = etapaAnterior ? contrato.documentos.filter((d) => d.etapaChave === etapaAnterior.chave && d.anexo) : [];
+  const docs = (n: number) => `${n} documento${n === 1 ? "" : "s"}`;
+  const meuSignatarioPendente = (contrato.fluxoAssinatura?.signatarios ?? []).some((s) =>
+    s.status === "PENDENTE" && (user.tipo === "EXTERNO" ? s.tipo === "EXTERNO" && pode(user, "contrato.assinar") : s.userId === user.id));
+
+  const temFluxoAssinatura = !!contrato.fluxoAssinatura;
+  function proximoPasso(): string {
+    if (naEtapaFinal) return "Contrato concluído. Nada a fazer aqui.";
+    if (etapaDaPrefeitura) {
+      if (isInterno) return `Aguardando a decisão da prefeitura em "${etapaAtual?.nome}".`;
+      return aprova ? `Analise ${paraAnalisar.length ? "o que o CTP enviou" : "a etapa"} e aprove, ou peça revisão explicando o motivo.` : `Aguardando a aprovação de quem responde pela prefeitura (ex.: o prefeito).`;
+    }
+    if (naEtapaAssinatura && meuSignatarioPendente) return "Sua assinatura é necessária no contrato.";
+    if (!isInterno) {
+      if (daPrefeituraPendentes.length && enviaDocumentos) return `Envie ${docs(daPrefeituraPendentes.length)} pedido${daPrefeituraPendentes.length === 1 ? "" : "s"} pelo CTP.`;
+      if (paraConferir.length) return `O CTP está conferindo ${docs(paraConferir.length)} que vocês enviaram.`;
+      return naEtapaAssinatura ? "Aguardando as assinaturas." : "O CTP está trabalhando nesta etapa.";
+    }
+    if (paraConferir.length) return `Confira e aprove ${docs(paraConferir.length)} enviado${paraConferir.length === 1 ? "" : "s"} pela prefeitura.`;
+    if (doCtpPendentes.length) return `Envie ${docs(doCtpPendentes.length)} que cabe${doCtpPendentes.length === 1 ? "" : "m"} ao CTP.`;
+    if (daPrefeituraPendentes.length) return `Aguardando a prefeitura enviar ${docs(daPrefeituraPendentes.length)}.`;
+    if (naEtapaAssinatura && !temFluxoAssinatura) return "Abra a coleta de assinaturas.";
+    if (avancoBloqueadoPorAssinatura) return "Aguardando as assinaturas.";
+    return proximaEtapa ? `Tudo certo nesta etapa. Avance para "${proximaEtapa.nome}" quando concluir.` : "";
+  }
+  const passo = proximoPasso();
 
   const signatarios = contrato.fluxoAssinatura?.signatarios ?? [];
   const assinados = signatarios.filter((s) => s.status === "ASSINADO").length;
@@ -142,21 +183,86 @@ export default async function ContratoDetailPage({ params }: { params: Promise<{
 
       <div className="grid grid-cols-[minmax(0,1fr)] gap-5 lg:grid-cols-[minmax(0,1fr)_340px]">
         <div className="flex flex-col gap-5">
-          {gerencia && proximaEtapa && (
+          {passo && (
+            <p className="flex items-start gap-2 rounded-xl bg-cyan-50 px-4 py-3 text-sm text-cyan-900">
+              <ArrowRightCircleIcon className="mt-0.5 h-4 w-4 shrink-0 text-cyan-600" />
+              <span><strong className="font-semibold">Próximo passo:</strong> {passo}</span>
+            </p>
+          )}
+          {etapaAtual?.motivoDevolucao && (
+            <p className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+              <strong className="font-semibold">A prefeitura pediu revisão:</strong> {etapaAtual.motivoDevolucao}
+            </p>
+          )}
+
+          {etapaDaPrefeitura && (
+            <Panel title="Aprovação da prefeitura" description={`"${etapaAtual?.nome}" é decidida pela prefeitura: aprovar segue o contrato; pedir revisão devolve à etapa anterior.`}>
+              {paraAnalisar.length > 0 && (
+                <ul className="divide-y divide-slate-100 border-b border-slate-100">
+                  {paraAnalisar.map((d) => (
+                    <li key={d.id}>
+                      <a href={`/api/files/${d.anexo!.id}`} target="_blank" rel="noopener noreferrer" className="group flex items-center gap-3 px-5 py-3 hover:bg-slate-50">
+                        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-red-50 text-red-600"><DocumentTextIcon className="h-5 w-5" /></span>
+                        <span className="min-w-0 flex-1">
+                          <span className="block text-sm font-medium text-slate-800 group-hover:text-cyan-800">{d.nome}</span>
+                          <span className="block truncate text-xs text-slate-400">{d.anexo!.nomeOriginal}</span>
+                        </span>
+                        <ArrowTopRightOnSquareIcon className="h-4 w-4 text-slate-300 group-hover:text-cyan-600" />
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {aprova ? (
+                <div className="flex flex-col gap-3 px-5 py-4">
+                  <FormSeguro acao={aprovarEtapaContratoSeguro} className="flex flex-col items-start">
+                    <input type="hidden" name="contratoId" value={contrato.id} />
+                    <button className="primary-button bg-emerald-600 hover:bg-emerald-700"><CheckIcon className="h-4 w-4" />Aprovar e seguir para {proximaEtapa?.curto}</button>
+                  </FormSeguro>
+                  <details>
+                    <summary className="cursor-pointer text-xs font-medium text-slate-500 hover:text-slate-700">Pedir revisão ao CTP…</summary>
+                    <FormSeguro acao={pedirRevisaoEtapaContratoSeguro} className="mt-2 flex flex-col gap-2">
+                      <input type="hidden" name="contratoId" value={contrato.id} />
+                      <textarea name="motivo" required rows={3} aria-label="O que precisa ser revisto" placeholder="O que precisa ser revisto" className="form-control text-sm" />
+                      <button className="secondary-button self-start border-amber-200 text-amber-800">Pedir revisão</button>
+                    </FormSeguro>
+                  </details>
+                </div>
+              ) : (
+                <p className="px-5 py-4 text-xs text-slate-500">
+                  {isInterno ? "O CTP não conclui esta etapa: a prefeitura aprova ou pede revisão pelo portal." : "Só quem tem no perfil a permissão \"Aprovar etapas do contrato\" decide esta etapa."}
+                </p>
+              )}
+            </Panel>
+          )}
+
+          {gerencia && proximaEtapa && !etapaDaPrefeitura && (
             <Panel title="Próxima etapa" description={`Etapa atual: ${etapaAtual?.nome}`}>
               <div className="px-5 py-4">
                 <AvancarEtapaForm
                   contratoId={contrato.id}
                   proximaEtapaNome={proximaEtapa.curto}
-                  bloqueado={avancoBloqueadoPorAssinatura || !podeAvancar}
+                  bloqueado={avancoBloqueadoPorAssinatura || !podeAvancar || emAberto.length > 0}
                   motivoBloqueio={
                     !podeAvancar
                       ? `A etapa "${etapaAtual?.nome}" só pode ser concluída por: ${nomesPerfisDaEtapa}.`
-                      : avancoBloqueadoPorAssinatura ? `A etapa "${etapaAtual?.nome}" exige todas as assinaturas antes de avançar.` : undefined
+                      : avancoBloqueadoPorAssinatura ? `A etapa "${etapaAtual?.nome}" exige todas as assinaturas antes de avançar.`
+                      : emAberto.length ? `Faltam ${docs(emAberto.length)} desta etapa (veja abaixo).` : undefined
                   }
                 />
               </div>
             </Panel>
+          )}
+
+          {etapaAtual && !naEtapaFinal && (documentosEtapa.length > 0 || gerencia) && (
+            <DocumentosDaEtapa
+              contratoId={contrato.id}
+              etapaNome={etapaAtual.nome}
+              documentos={documentosEtapa}
+              isInterno={isInterno}
+              gerencia={gerencia}
+              enviaDocumentos={enviaDocumentos}
+            />
           )}
 
           {naEtapaAssinatura && gerencia && !contrato.fluxoAssinatura && (
@@ -241,7 +347,7 @@ export default async function ContratoDetailPage({ params }: { params: Promise<{
             </Panel>
           )}
 
-          <Panel title="Documentos" description="Arquivos anexados ao longo do fluxo contratual.">
+          <Panel title="Arquivos do contrato" description="Tudo o que foi enviado ao longo do contrato, inclusive versões substituídas.">
             {contrato.anexos.length === 0 ? (
               <p className="px-5 py-5 text-sm text-slate-400">Nenhum documento anexado ainda.</p>
             ) : (

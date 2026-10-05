@@ -109,6 +109,51 @@ const CONTRATOS: ContratoSpec[] = [
   { id: "contrato-demo-coronel-vivida-pd", codigo: "CTR-2026-033", objeto: "Revisão do Plano Diretor Municipal de Coronel Vivida", municipioId: "municipio-coronel-vivida", etapa: "PEDIDO_ORCAMENTO", responsavel: "ana", criado: "2026-09-19T09:00:00-03:00", tags: ["plano-diretor"], valor: "R$ 420.000,00" },
 ];
 
+/**
+ * Documentos pedidos nas etapas do tipo Padrão (ver migração documentos_do_contrato): o orçamento do
+ * CTP na emissão e a documentação de contratação. Etapas já passadas ficam com o arquivo que o
+ * contrato já tinha; Mariópolis (CTR-2026-030) está no meio da coleta, para a demonstração.
+ */
+async function semearDocumentosPedidos(c: (typeof CONTRATOS)[number], idx: number, municipio: string) {
+  type Pedido = { id: string; chave: string; nome: string; enviaQuem: "PREFEITURA" | "CTP"; status: "PENDENTE" | "ENVIADO" | "APROVADO"; anexoId: string | null; enviadoEm: string | null };
+  const pedidos: Pedido[] = [];
+  const IDX_EMISSAO = ETAPAS_CONTRATO.indexOf("EMISSAO_ORCAMENTO");
+  const IDX_DOCUMENTOS = ETAPAS_CONTRATO.indexOf("DOCUMENTOS_CONTRATACAO");
+
+  const orcamentoEntregue = idx > IDX_EMISSAO;
+  pedidos.push({
+    id: `doc-${c.id}-orcamento`, chave: "EMISSAO_ORCAMENTO", nome: "Proposta de orçamento", enviaQuem: "CTP",
+    status: orcamentoEntregue ? "APROVADO" : "PENDENTE", anexoId: orcamentoEntregue ? `anexo-${c.id}-orcamento` : null, enviadoEm: orcamentoEntregue ? dia(c.criado, 4) : null,
+  });
+  if (idx <= IDX_DOCUMENTOS) {
+    const emColeta = idx === IDX_DOCUMENTOS;
+    const lista: [string, string, "PREFEITURA" | "CTP", "PENDENTE" | "ENVIADO" | "APROVADO"][] = [
+      ["termo", "Termo de referência assinado", "PREFEITURA", "PENDENTE"],
+      ["dotacao", "Declaração de dotação orçamentária", "PREFEITURA", emColeta ? "ENVIADO" : "PENDENTE"],
+      ["fiscal", "Portaria de designação do fiscal do contrato", "PREFEITURA", "PENDENTE"],
+      ["certidoes", "Certidões de regularidade fiscal e trabalhista", "CTP", emColeta ? "APROVADO" : "PENDENTE"],
+      ["social", "Contrato social e cartão CNPJ", "CTP", emColeta ? "APROVADO" : "PENDENTE"],
+    ];
+    for (const [chave, nome, enviaQuem, status] of lista) {
+      let anexoId: string | null = null;
+      const quando = dia(c.criado, 10);
+      if (status !== "PENDENTE") {
+        anexoId = await anexo(`anexo-${c.id}-pedido-${chave}`, `${nome.replace(/[^\p{L}\p{N}]+/gu, "_")}.pdf`, [
+          { estilo: "titulo", texto: nome },
+          { estilo: "subtitulo", texto: `${c.codigo} · ${municipio}` },
+          { estilo: "texto", texto: `Documento referente ao contrato "${c.objeto}".` },
+          { estilo: "nota", texto: enviaQuem === "CTP" ? "Emitido pelo Cilla Tech Park." : `Emitido pela ${municipio}.` },
+        ], quando, { contratoId: c.id });
+      }
+      pedidos.push({ id: `doc-${c.id}-${chave}`, chave: "DOCUMENTOS_CONTRATACAO", nome, enviaQuem, status, anexoId, enviadoEm: anexoId ? quando : null });
+    }
+  }
+  for (const p of pedidos) {
+    const dados = { contratoId: c.id, etapaChave: p.chave, nome: p.nome, enviaQuem: p.enviaQuem, status: p.status, anexoId: p.anexoId, enviadoEm: p.enviadoEm ? d(p.enviadoEm) : null, motivoRecusa: null };
+    await prisma.documentoContrato.upsert({ where: { id: p.id }, update: dados, create: { id: p.id, ...dados } });
+  }
+}
+
 async function semearContratos() {
   for (const c of CONTRATOS) {
     const dados = { objeto: c.objeto, contratanteId: c.municipioId, etapaAtual: c.etapa, responsavelId: U[c.responsavel], tags: JSON.stringify(c.tags), createdAt: d(c.criado) };
@@ -125,6 +170,7 @@ async function semearContratos() {
     for (const doc of docs) {
       await anexo(`anexo-${c.id}-${doc.tipo}`, doc.nome, blocosDeDoc(docContrato(doc.tipo, c.codigo, c.objeto, municipio, c.valor)), doc.quando, { contratoId: c.id });
     }
+    await semearDocumentosPedidos(c, idx, municipio);
 
     if (c.manterFluxo) {
       const fluxo = await prisma.fluxoAssinatura.findUnique({ where: { contratoId: c.id } });

@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { lerIds } from "@/lib/permissoes";
+import { pedirDocumentosPadrao } from "@/lib/documentos-contrato";
 
 /**
  * Fluxos de contrato configuráveis (Cadastros › Fluxos de contrato). Cada contrato tem a sua
@@ -50,7 +51,7 @@ export async function garantirEtapasDosContratos(contratoIds: string[]) {
   if (!contratoIds.length) return;
   const semEtapas = await prisma.contrato.findMany({
     where: { id: { in: contratoIds }, etapas: { none: {} } },
-    select: { id: true, fluxoId: true },
+    select: { id: true, fluxoId: true, etapaAtual: true },
   });
   for (const c of semEtapas) {
     const fluxoId = c.fluxoId ?? FLUXO_PADRAO_ID;
@@ -69,9 +70,13 @@ export async function garantirEtapasDosContratos(contratoIds: string[]) {
             exigeAssinaturas: e.exigeAssinaturas,
             liberaProjeto: e.liberaProjeto,
             perfisQueAvancam: e.perfisQueAvancam,
+            concluidaPelaPrefeitura: e.concluidaPelaPrefeitura,
           })),
         }),
       ]);
+      // Documentos padrão das etapas que o contrato ainda vai percorrer (a atual em diante).
+      const atual = Math.max(0, modelo.findIndex((e) => e.chave === c.etapaAtual));
+      await pedirDocumentosPadrao(c.id, modelo.slice(atual));
     } catch {
       // Outra requisição copiou as etapas ao mesmo tempo (chave única contrato+etapa) — tudo certo.
     }
@@ -79,10 +84,12 @@ export async function garantirEtapasDosContratos(contratoIds: string[]) {
 }
 
 /**
- * Quem pode concluir a etapa atual: se a etapa lista perfis, só eles; senão, quem gerencia contratos.
+ * Quem pode concluir a etapa atual pelo CTP: se a etapa lista perfis, só eles; senão, quem gerencia
+ * contratos. Etapas concluídas pela prefeitura não são do CTP — ver podeAprovarEtapa.
  */
-export function podeAvancarEtapa(user: { perfilId: string; permissoes: readonly string[] }, etapa: { perfisQueAvancam: string }) {
+export function podeAvancarEtapa(user: { perfilId: string; permissoes: readonly string[] }, etapa: { perfisQueAvancam: string; concluidaPelaPrefeitura?: boolean }) {
   if (!user.permissoes.includes("contrato.gerenciar")) return false;
+  if (etapa.concluidaPelaPrefeitura) return false; // quem decide é a prefeitura (ex.: aprovação do orçamento)
   const perfis = lerIds(etapa.perfisQueAvancam);
   return perfis.length === 0 || perfis.includes(user.perfilId);
 }
@@ -96,4 +103,9 @@ export function chaveDaEtapa(nome: string) {
     .replace(/[^A-Z0-9]+/g, "_")
     .replace(/^_+|_+$/g, "")
     .slice(0, 60) || "ETAPA";
+}
+
+/** A prefeitura conclui esta etapa (aprovar ou pedir revisão)? Só perfis com "contrato.aprovar". */
+export function podeAprovarEtapa(user: { tipo: string; permissoes: readonly string[] }, etapa: { concluidaPelaPrefeitura: boolean }) {
+  return etapa.concluidaPelaPrefeitura && user.tipo === "EXTERNO" && user.permissoes.includes("contrato.aprovar");
 }

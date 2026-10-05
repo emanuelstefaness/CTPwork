@@ -2,7 +2,10 @@
 
 import { capturar, type Resultado } from "@/lib/resultado";
 import { assinarMemorando, cancelarMemorando, concluirMemorando, criarMemorando, iniciarExecucaoMemorando } from "./memorandos";
-import { assinarContrato, avancarEtapaContrato, criarContrato, criarProjetoDoContrato, iniciarAssinaturaContrato } from "./contratos";
+import {
+  aprovarDocumentoContrato, aprovarEtapaContrato, assinarContrato, avancarEtapaContrato, criarContrato, criarProjetoDoContrato, enviarDocumentoContrato,
+  iniciarAssinaturaContrato, pedirDocumentoContrato, pedirRevisaoEtapaContrato, recusarDocumentoContrato, removerDocumentoContrato,
+} from "./contratos";
 import {
   aprovarItemChecklist, avancarStatusEtapa, concluirEtapaComRevisao, criarItemChecklist, definirPrazoEtapa,
   enviarArquivoChecklist, enviarMensagemChat, reabrirEtapa, responderFormularioEtapa,
@@ -72,6 +75,36 @@ export async function criarProjetoDoContratoSeguro(formData: FormData): R {
 
 export async function assinarContratoSeguro(formData: FormData): R {
   return capturar(() => assinarContrato(campo(formData, "contratoId")));
+}
+
+/* ── Documentos e aprovações nas etapas do contrato ── */
+
+export async function pedirDocumentoContratoSeguro(formData: FormData): R {
+  return capturar(() => pedirDocumentoContrato(formData));
+}
+
+export async function enviarDocumentoContratoSeguro(formData: FormData): R {
+  return capturar(() => enviarDocumentoContrato(formData));
+}
+
+export async function aprovarDocumentoContratoSeguro(formData: FormData): R {
+  return capturar(() => aprovarDocumentoContrato(campo(formData, "documentoId")));
+}
+
+export async function recusarDocumentoContratoSeguro(formData: FormData): R {
+  return capturar(() => recusarDocumentoContrato(formData));
+}
+
+export async function removerDocumentoContratoSeguro(formData: FormData): R {
+  return capturar(() => removerDocumentoContrato(campo(formData, "documentoId")));
+}
+
+export async function aprovarEtapaContratoSeguro(formData: FormData): R {
+  return capturar(() => aprovarEtapaContrato(campo(formData, "contratoId")));
+}
+
+export async function pedirRevisaoEtapaContratoSeguro(formData: FormData): R {
+  return capturar(() => pedirRevisaoEtapaContrato(formData));
 }
 
 /* ── Etapa do projeto ── */

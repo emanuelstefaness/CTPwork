@@ -181,6 +181,20 @@ então editar o tipo depois não mexe nos contratos em andamento. Cada etapa gua
 quando (aparece no stepper). Tipos não são apagados, só desativados. Contratos anteriores a esta
 função seguem o tipo **Padrão** (as 6 etapas originais). Lógica comum em `src/lib/fluxo-contrato.ts`.
 
+## Documentos e aprovações no contrato
+
+- **Documentos da etapa** (`DocumentoContrato`): cada etapa do tipo de contrato lista os documentos que a
+  prefeitura envia e os que o CTP envia; eles são pedidos automaticamente em todo contrato novo. A prefeitura
+  envia pelo portal, o CTP confere e **aprova** ou **recusa com motivo** (volta a pendente, o arquivo fica no
+  histórico); documentos do CTP valem como entregues ao enviar. O CTP pode pedir outros na hora. **A etapa só
+  avança com todos aprovados.** Tipo Padrão: proposta de orçamento (CTP) na emissão; termo de referência,
+  dotação orçamentária, portaria do fiscal (prefeitura), certidões e contrato social (CTP) na contratação.
+- **Etapa concluída pela prefeitura** (`concluidaPelaPrefeitura`): quem decide é a prefeitura (permissão
+  "Aprovar etapas do contrato"), não o CTP. No Padrão, a aprovação do orçamento: o prefeito vê o orçamento e
+  aprova, ou pede revisão com motivo — o contrato volta à emissão e o orçamento volta a ser pedido.
+- Em Cadastros › Fluxos de contrato, "aplicar aos contratos em andamento" leva a regra e os documentos que
+  faltarem às etapas ainda não concluídas. Cada contrato mostra o "Próximo passo" de quem está vendo.
+
 ## Segurança HTTP
 
 - `next.config.ts`: `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy`,

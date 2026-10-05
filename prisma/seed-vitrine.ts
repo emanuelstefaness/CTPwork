@@ -1,5 +1,6 @@
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
+import { gravarPdf, type Bloco } from "./demo/pdf";
 
 // Seed de VITRINE: mostra as funções de personalização sobre o cenário de demonstração —
 // perfis próprios, tipos de contrato (Dispensa, Termo aditivo), uma prefeitura com fluxos
@@ -33,7 +34,7 @@ const PERFIS = [
     nome: "Prefeito",
     descricao: "Revisa, dá o parecer e assina os contratos pela prefeitura.",
     tipo: "EXTERNO",
-    permissoes: ["minuta.revisar", "minuta.parecer", "contrato.assinar", "etapa.enviar"],
+    permissoes: ["minuta.revisar", "minuta.parecer", "contrato.assinar", "contrato.aprovar", "etapa.enviar"],
     somenteParticipa: false,
   },
   {
@@ -48,7 +49,14 @@ const PERFIS = [
 
 // ───────────────────────────── tipos de contrato ─────────────────────────────
 
-type EtapaSpec = { chave: string; nome: string; curto: string; assinaturas?: boolean; projeto?: boolean; soGestor?: boolean };
+type EnviaQuem = "PREFEITURA" | "CTP";
+type EtapaSpec = {
+  chave: string; nome: string; curto: string; assinaturas?: boolean; projeto?: boolean; soGestor?: boolean;
+  /** Etapa decidida pela prefeitura (ex.: aprovação). */
+  prefeitura?: boolean;
+  /** Documentos pedidos por padrão: [nome, quem envia]. */
+  docs?: [string, EnviaQuem][];
+};
 
 const FLUXOS: { id: string; nome: string; descricao: string; municipioId?: string; etapas: EtapaSpec[] }[] = [
   {
@@ -56,9 +64,9 @@ const FLUXOS: { id: string; nome: string; descricao: string; municipioId?: strin
     nome: "Dispensa de licitação",
     descricao: "Contratação direta (Lei 14.133/2021, art. 75), com parecer jurídico antes da assinatura.",
     etapas: [
-      { chave: "SOLICITACAO", nome: "Solicitação da prefeitura", curto: "Solicitação" },
-      { chave: "PROPOSTA", nome: "Proposta técnica e comercial", curto: "Proposta" },
-      { chave: "PARECER_JURIDICO", nome: "Justificativa e parecer jurídico", curto: "Parecer", soGestor: true },
+      { chave: "SOLICITACAO", nome: "Solicitação da prefeitura", curto: "Solicitação", docs: [["Ofício de solicitação", "PREFEITURA"]] },
+      { chave: "PROPOSTA", nome: "Proposta técnica e comercial", curto: "Proposta", docs: [["Proposta técnica e comercial", "CTP"]] },
+      { chave: "PARECER_JURIDICO", nome: "Justificativa e parecer jurídico", curto: "Parecer", soGestor: true, docs: [["Justificativa da contratação direta", "CTP"], ["Parecer jurídico da procuradoria", "PREFEITURA"]] },
       { chave: "ASSINATURA", nome: "Assinatura do contrato", curto: "Assinatura", assinaturas: true },
       { chave: "VIGENTE", nome: "Contrato vigente", curto: "Vigente", projeto: true },
     ],
@@ -89,6 +97,8 @@ async function semearFluxo(f: (typeof FLUXOS)[number]) {
       exigeAssinaturas: !!e.assinaturas,
       liberaProjeto: !!e.projeto,
       perfisQueAvancam: JSON.stringify(e.soGestor ? ["perfil-gestor"] : []),
+      concluidaPelaPrefeitura: !!e.prefeitura,
+      documentosPadrao: JSON.stringify((e.docs ?? []).map(([nome, enviaQuem]) => ({ nome, enviaQuem }))),
     };
     await prisma.etapaFluxoContrato.upsert({
       where: { fluxoId_chave: { fluxoId: f.id, chave: e.chave } },
@@ -104,6 +114,8 @@ async function semearFluxo(f: (typeof FLUXOS)[number]) {
 async function semearContrato(c: {
   id: string; codigo: string; objeto: string; contratanteId: string; fluxoId: string;
   responsavelId: string; concluidas: { por: string; em: string }[]; criadoEm: string; tags?: string[];
+  /** Situação de documentos da etapa atual (pelo nome); os não listados ficam pendentes. */
+  entregues?: Record<string, { status: "ENVIADO" | "APROVADO"; quando: string }>;
 }) {
   const fluxo = await prisma.fluxoContrato.findUniqueOrThrow({ where: { id: c.fluxoId }, include: { etapas: { orderBy: { ordem: "asc" } } } });
   const atual = fluxo.etapas[c.concluidas.length];
@@ -121,7 +133,8 @@ async function semearContrato(c: {
     const feito = c.concluidas[e.ordem];
     const etapa = {
       ordem: e.ordem, nome: e.nome, curto: e.curto, exigeAssinaturas: e.exigeAssinaturas, liberaProjeto: e.liberaProjeto,
-      perfisQueAvancam: e.perfisQueAvancam, concluidaEm: feito ? d(feito.em) : null, concluidaPorId: feito ? feito.por : null,
+      perfisQueAvancam: e.perfisQueAvancam, concluidaPelaPrefeitura: e.concluidaPelaPrefeitura,
+      concluidaEm: feito ? d(feito.em) : null, concluidaPorId: feito ? feito.por : null,
     };
     await prisma.etapaContrato.upsert({
       where: { contratoId_chave: { contratoId: c.id, chave: e.chave } },
@@ -129,6 +142,35 @@ async function semearContrato(c: {
       create: { contratoId: c.id, chave: e.chave, ...etapa },
     });
   }
+
+  // Documentos padrão da etapa atual em diante, como na criação pelo sistema.
+  for (const e of fluxo.etapas.slice(c.concluidas.length)) {
+    const docs = JSON.parse(e.documentosPadrao) as { nome: string; enviaQuem: EnviaQuem }[];
+    for (const [i, doc] of docs.entries()) {
+      const id = `doc-${c.id}-${e.chave.toLowerCase()}-${i}`;
+      const entregue = e.chave === atual.chave ? c.entregues?.[doc.nome] : undefined;
+      const anexoId = entregue ? await anexoPdf(`anexo-${id}`, doc.nome, c, entregue.quando, doc.enviaQuem) : null;
+      const dados = {
+        contratoId: c.id, etapaChave: e.chave, nome: doc.nome, enviaQuem: doc.enviaQuem,
+        status: entregue?.status ?? "PENDENTE", anexoId, enviadoEm: entregue ? d(entregue.quando) : null, motivoRecusa: null,
+      };
+      await prisma.documentoContrato.upsert({ where: { id }, update: dados, create: { id, ...dados } });
+    }
+  }
+}
+
+/** PDF simples de demonstração, ligado ao contrato (aparece em "Arquivos do contrato"). */
+async function anexoPdf(id: string, nome: string, c: { id: string; codigo: string; objeto: string }, quando: string, enviaQuem: EnviaQuem) {
+  const blocos: Bloco[] = [
+    { estilo: "titulo", texto: nome },
+    { estilo: "subtitulo", texto: c.codigo },
+    { estilo: "texto", texto: `Documento referente ao contrato "${c.objeto}".` },
+    { estilo: "nota", texto: enviaQuem === "CTP" ? "Emitido pelo Cilla Tech Park." : "Emitido pela prefeitura contratante." },
+  ];
+  const tamanho = await gravarPdf(id, `CTP Work — Cilla Tech Park  ·  ${nome}`, blocos);
+  const dados = { nomeOriginal: `${nome.replace(/[^\p{L}\p{N}]+/gu, "_")}.pdf`, caminho: `/api/files/${id}`, tamanho, tipoMime: "application/pdf", contratoId: c.id, createdAt: d(quando) };
+  await prisma.anexo.upsert({ where: { id }, update: dados, create: { id, ...dados } });
+  return id;
 }
 
 // ───────────────────────────── conversas ─────────────────────────────
@@ -205,7 +247,10 @@ async function main() {
     nome: "Padrão — Clevelândia",
     descricao: "Tipo de contrato exclusivo da Prefeitura de Clevelândia.",
     municipioId: CLEVELANDIA,
-    etapas: padrao.map((e) => ({ chave: e.chave, nome: e.nome, curto: e.curto, assinaturas: e.exigeAssinaturas, projeto: e.liberaProjeto })),
+    etapas: padrao.map((e) => ({
+      chave: e.chave, nome: e.nome, curto: e.curto, assinaturas: e.exigeAssinaturas, projeto: e.liberaProjeto, prefeitura: e.concluidaPelaPrefeitura,
+      docs: (JSON.parse(e.documentosPadrao) as { nome: string; enviaQuem: EnviaQuem }[]).map((x): [string, EnviaQuem] => [x.nome, x.enviaQuem]),
+    })),
   });
   const planoDiretor = await prisma.tipoProjetoModelo.findUnique({ where: { chave: "PLANO_DIRETOR" }, include: { etapas: { orderBy: { ordem: "asc" } } } });
   if (planoDiretor) {
@@ -230,9 +275,14 @@ async function main() {
     concluidas: [
       { por: ana.id, em: "2026-09-15T16:20:00-03:00" },
       { por: bruno.id, em: "2026-09-22T11:05:00-03:00" },
-      { por: ana.id, em: "2026-09-29T09:40:00-03:00" },
+      { por: "user-vitrine-carlos", em: "2026-09-29T09:40:00-03:00" }, // aprovação do orçamento: o prefeito
     ],
     tags: ["Plano Diretor"],
+    entregues: {
+      "Certidões de regularidade fiscal e trabalhista": { status: "APROVADO", quando: "2026-09-30T14:00:00-03:00" },
+      "Contrato social e cartão CNPJ": { status: "APROVADO", quando: "2026-09-30T14:05:00-03:00" },
+      "Termo de referência assinado": { status: "ENVIADO", quando: "2026-10-02T10:20:00-03:00" },
+    },
   });
   await semearContrato({
     id: "contrato-vitrine-dispensa",

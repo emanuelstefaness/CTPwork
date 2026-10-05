@@ -9,6 +9,9 @@ import { FLUXO_PADRAO_ID, garantirEtapasDosContratos, podeAvancarEtapa, progress
 import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
 import { lerDocumentosPadrao } from "@/lib/documentos-padrao";
+import { documentosEmAberto, pedirDocumentosPadrao } from "@/lib/documentos-contrato";
+import { assertVeContrato } from "@/lib/visibilidade";
+import { salvarAnexo } from "@/lib/storage";
 import { redirect } from "next/navigation";
 
 export async function criarContrato(formData: FormData) {
@@ -52,10 +55,14 @@ export async function criarContrato(formData: FormData) {
           exigeAssinaturas: e.exigeAssinaturas,
           liberaProjeto: e.liberaProjeto,
           perfisQueAvancam: e.perfisQueAvancam,
+          concluidaPelaPrefeitura: e.concluidaPelaPrefeitura,
         })),
       },
     },
   });
+
+  // Documentos que o tipo de contrato pede em cada etapa (Cadastros › Fluxos de contrato).
+  await pedirDocumentosPadrao(contrato.id, fluxo.etapas);
 
   await registrarAuditoria({ userId: user.id, acao: "CRIAR", entidadeTipo: "Contrato", entidadeId: contrato.id, detalhe: fluxo.nome });
   revalidatePath("/contratos");
@@ -81,6 +88,7 @@ export async function avancarEtapaContrato(contratoId: string) {
   const user = await exigirPermissao("contrato.gerenciar");
   const { contrato, atual, proxima } = await contratoComEtapas(contratoId);
   if (!proxima) throw new Error("O contrato já está na última etapa do fluxo.");
+  if (atual.concluidaPelaPrefeitura) throw new AcessoNegadoError(`A etapa "${atual.nome}" é concluída pela prefeitura.`);
   // A etapa pode estar restrita a alguns perfis (Cadastros › Fluxos de contrato).
   if (!podeAvancarEtapa(user, atual)) {
     throw new AcessoNegadoError(`Seu perfil (${user.perfilNome}) não pode concluir a etapa "${atual.nome}".`);
@@ -89,18 +97,75 @@ export async function avancarEtapaContrato(contratoId: string) {
   if (atual.exigeAssinaturas && !contrato.fluxoAssinatura?.concluido) {
     throw new Error(`A etapa "${atual.nome}" exige todas as assinaturas antes de avançar.`);
   }
+  await concluirEtapaAtual(contratoId, atual, proxima, user.id, "AVANCAR_ETAPA");
+}
 
+/** Conclui a etapa atual (com quem e quando) e passa para a próxima — se não faltar documento. */
+async function concluirEtapaAtual(contratoId: string, atual: { id: string; chave: string }, proxima: { chave: string; nome: string }, userId: string, acao: string) {
+  const emAberto = documentosEmAberto(await prisma.documentoContrato.findMany({ where: { contratoId, etapaChave: atual.chave } }));
+  if (emAberto.length) {
+    throw new Error(`Faltam ${emAberto.length} documento(s) desta etapa: ${emAberto.map((d) => d.nome).join(", ")}.`);
+  }
   await prisma.$transaction([
-    prisma.etapaContrato.update({ where: { id: atual.id }, data: { concluidaEm: new Date(), concluidaPorId: user.id } }),
+    prisma.etapaContrato.update({ where: { id: atual.id }, data: { concluidaEm: new Date(), concluidaPorId: userId, motivoDevolucao: null } }),
     prisma.contrato.update({ where: { id: contratoId }, data: { etapaAtual: proxima.chave } }),
   ]);
-  await registrarAuditoria({
-    userId: user.id,
-    acao: "AVANCAR_ETAPA",
-    entidadeTipo: "Contrato",
-    entidadeId: contratoId,
-    detalhe: proxima.nome,
+  await registrarAuditoria({ userId, acao, entidadeTipo: "Contrato", entidadeId: contratoId, detalhe: proxima.nome });
+  revalidatePath(`/contratos/${contratoId}`);
+}
+
+/** Etapa concluída pela prefeitura (ex.: aprovação do orçamento): quem tem "contrato.aprovar" aprova. */
+async function etapaParaAprovar(contratoId: string) {
+  const user = await requireSession();
+  if (user.tipo !== "EXTERNO") throw new AcessoNegadoError("Esta etapa é concluída pela prefeitura.");
+  exigir(user, "contrato.aprovar");
+  await assertVeContrato(user, contratoId);
+  const dados = await contratoComEtapas(contratoId);
+  if (!dados.atual.concluidaPelaPrefeitura) throw new Error("A etapa atual não depende de aprovação da prefeitura.");
+  return { user, ...dados };
+}
+
+export async function aprovarEtapaContrato(contratoId: string) {
+  const { user, contrato, atual, proxima } = await etapaParaAprovar(contratoId);
+  if (!proxima) throw new Error("O contrato já está na última etapa do fluxo.");
+  await concluirEtapaAtual(contratoId, atual, proxima, user.id, "APROVAR_ETAPA");
+  await prisma.notificacao.create({
+    data: {
+      userId: contrato.responsavelId, tipo: "MUNICIPIO_RESPONDEU",
+      mensagem: `A prefeitura aprovou "${atual.nome}" no contrato ${contrato.codigo}. O contrato seguiu para "${proxima.nome}".`,
+      entidadeTipo: "Contrato", entidadeId: contratoId,
+    },
   });
+}
+
+/**
+ * A prefeitura não aprova: o contrato volta à etapa anterior com o motivo, e os documentos que o
+ * CTP entregou nela (ex.: a proposta de orçamento) voltam a ser pedidos.
+ */
+export async function pedirRevisaoEtapaContrato(formData: FormData) {
+  const contratoId = String(formData.get("contratoId"));
+  const motivo = String(formData.get("motivo") ?? "").trim().slice(0, 1000);
+  if (!motivo) throw new Error("Explique o que precisa ser revisto — o CTP vai ver.");
+  const { user, contrato, atual, indice } = await etapaParaAprovar(contratoId);
+  const anterior = contrato.etapas[indice - 1];
+  if (!anterior) throw new Error("Não há etapa anterior para onde devolver o contrato.");
+
+  await prisma.$transaction([
+    prisma.etapaContrato.update({ where: { id: anterior.id }, data: { concluidaEm: null, concluidaPorId: null, motivoDevolucao: motivo } }),
+    prisma.contrato.update({ where: { id: contratoId }, data: { etapaAtual: anterior.chave } }),
+    prisma.documentoContrato.updateMany({
+      where: { contratoId, etapaChave: anterior.chave, enviaQuem: "CTP" },
+      data: { status: "PENDENTE", anexoId: null, motivoRecusa: motivo },
+    }),
+  ]);
+  await prisma.notificacao.create({
+    data: {
+      userId: contrato.responsavelId, tipo: "MUNICIPIO_RESPONDEU",
+      mensagem: `A prefeitura pediu revisão em "${atual.nome}" (contrato ${contrato.codigo}): ${motivo}`,
+      entidadeTipo: "Contrato", entidadeId: contratoId,
+    },
+  });
+  await registrarAuditoria({ userId: user.id, acao: "PEDIR_REVISAO_ETAPA", entidadeTipo: "Contrato", entidadeId: contratoId, detalhe: motivo });
   revalidatePath(`/contratos/${contratoId}`);
 }
 
@@ -268,4 +333,108 @@ export async function criarProjetoDoContrato(formData: FormData) {
   await registrarAuditoria({ userId: user.id, acao: "CRIAR_PROJETO", entidadeTipo: "Contrato", entidadeId: contratoId, detalhe: projeto.id });
   revalidatePath("/projetos");
   redirect(`/projetos/${projeto.id}`);
+}
+
+// ---------- Documentos pedidos nas etapas do contrato ----------
+
+async function avisarPrefeitura(contrato: { id: string; codigo: string; contratanteId: string }, mensagem: string) {
+  const externos = await prisma.user.findMany({ where: { municipioId: contrato.contratanteId, tipo: "EXTERNO", ativo: true }, select: { id: true } });
+  if (externos.length) {
+    await prisma.notificacao.createMany({
+      data: externos.map((u) => ({ userId: u.id, tipo: "ETAPA_AGUARDANDO_VOCE", mensagem, entidadeTipo: "Contrato", entidadeId: contrato.id })),
+    });
+  }
+}
+
+/** O CTP pede um documento a mais na etapa atual do contrato. */
+export async function pedirDocumentoContrato(formData: FormData) {
+  const user = await exigirPermissao("contrato.gerenciar");
+  const contratoId = String(formData.get("contratoId"));
+  const nome = String(formData.get("nome") ?? "").trim().slice(0, 200);
+  const enviaQuem = formData.get("enviaQuem") === "CTP" ? "CTP" : "PREFEITURA";
+  if (!nome) throw new Error("Diga qual documento é pedido.");
+  await assertVeContrato(user, contratoId);
+  const contrato = await prisma.contrato.findUniqueOrThrow({ where: { id: contratoId } });
+
+  await prisma.documentoContrato.create({ data: { contratoId, etapaChave: contrato.etapaAtual, nome, enviaQuem } });
+  if (enviaQuem === "PREFEITURA") await avisarPrefeitura(contrato, `O CTP pediu o documento "${nome}" no contrato ${contrato.codigo}.`);
+  await registrarAuditoria({ userId: user.id, acao: "PEDIR_DOCUMENTO", entidadeTipo: "Contrato", entidadeId: contratoId, detalhe: nome });
+  revalidatePath(`/contratos/${contratoId}`);
+}
+
+/**
+ * Envio do arquivo de um documento pedido. Da prefeitura: fica "em análise" até o CTP aprovar.
+ * Do CTP (documento que cabe ao CTP, ou enviado pelo CTP em nome da prefeitura): já vale como aprovado.
+ */
+export async function enviarDocumentoContrato(formData: FormData) {
+  const user = await requireSession();
+  const documento = await prisma.documentoContrato.findUniqueOrThrow({ where: { id: String(formData.get("documentoId")) }, include: { contrato: true } });
+  await assertVeContrato(user, documento.contratoId);
+  if (documento.status === "APROVADO") throw new Error("Este documento já foi aprovado.");
+  const interno = user.tipo === "INTERNO";
+  if (interno) exigir(user, "contrato.gerenciar");
+  else {
+    if (documento.enviaQuem !== "PREFEITURA") throw new AcessoNegadoError("Este documento é enviado pelo CTP.");
+    exigir(user, "etapa.enviar");
+  }
+
+  const file = formData.get("arquivo") as File | null;
+  if (!file || file.size === 0) throw new Error("Selecione um arquivo.");
+  const anexoId = await salvarAnexo(file);
+  await prisma.$transaction([
+    // Vincula o arquivo ao contrato: aparece na lista de documentos e herda o controle de acesso dele.
+    prisma.anexo.update({ where: { id: anexoId }, data: { contratoId: documento.contratoId } }),
+    prisma.documentoContrato.update({
+      where: { id: documento.id },
+      data: { anexoId, enviadoEm: new Date(), status: interno ? "APROVADO" : "ENVIADO", motivoRecusa: null },
+    }),
+  ]);
+
+  if (!interno) {
+    await prisma.notificacao.create({
+      data: {
+        userId: documento.contrato.responsavelId, tipo: "MUNICIPIO_RESPONDEU",
+        mensagem: `O município enviou "${documento.nome}" no contrato ${documento.contrato.codigo}.`,
+        entidadeTipo: "Contrato", entidadeId: documento.contratoId,
+      },
+    });
+  }
+  await registrarAuditoria({ userId: user.id, acao: "ENVIAR_DOCUMENTO", entidadeTipo: "DocumentoContrato", entidadeId: documento.id, detalhe: documento.nome });
+  revalidatePath(`/contratos/${documento.contratoId}`);
+}
+
+export async function aprovarDocumentoContrato(documentoId: string) {
+  const user = await exigirPermissao("contrato.gerenciar");
+  const documento = await prisma.documentoContrato.findUniqueOrThrow({ where: { id: documentoId } });
+  await assertVeContrato(user, documento.contratoId);
+  if (documento.status !== "ENVIADO") throw new Error("Só dá para aprovar um documento já enviado.");
+  await prisma.documentoContrato.update({ where: { id: documentoId }, data: { status: "APROVADO" } });
+  await registrarAuditoria({ userId: user.id, acao: "APROVAR_DOCUMENTO", entidadeTipo: "DocumentoContrato", entidadeId: documentoId, detalhe: documento.nome });
+  revalidatePath(`/contratos/${documento.contratoId}`);
+}
+
+/** Devolve o documento à prefeitura com o motivo; o arquivo recusado continua no histórico do contrato. */
+export async function recusarDocumentoContrato(formData: FormData) {
+  const user = await exigirPermissao("contrato.gerenciar");
+  const documento = await prisma.documentoContrato.findUniqueOrThrow({ where: { id: String(formData.get("documentoId")) }, include: { contrato: true } });
+  await assertVeContrato(user, documento.contratoId);
+  const motivo = String(formData.get("motivo") ?? "").trim().slice(0, 500);
+  if (!motivo) throw new Error("Explique o motivo da recusa — a prefeitura vai ver.");
+  if (documento.status !== "ENVIADO") throw new Error("Só dá para recusar um documento enviado e ainda não aprovado.");
+
+  await prisma.documentoContrato.update({ where: { id: documento.id }, data: { status: "PENDENTE", anexoId: null, motivoRecusa: motivo } });
+  await avisarPrefeitura(documento.contrato, `O CTP pediu um novo envio de "${documento.nome}" (contrato ${documento.contrato.codigo}): ${motivo}`);
+  await registrarAuditoria({ userId: user.id, acao: "RECUSAR_DOCUMENTO", entidadeTipo: "DocumentoContrato", entidadeId: documento.id, detalhe: motivo });
+  revalidatePath(`/contratos/${documento.contratoId}`);
+}
+
+/** Tira da lista um documento que não será mais pedido (só enquanto não houver arquivo). */
+export async function removerDocumentoContrato(documentoId: string) {
+  const user = await exigirPermissao("contrato.gerenciar");
+  const documento = await prisma.documentoContrato.findUniqueOrThrow({ where: { id: documentoId } });
+  await assertVeContrato(user, documento.contratoId);
+  if (documento.anexoId) throw new Error("Este documento já tem arquivo enviado; recuse-o em vez de remover.");
+  await prisma.documentoContrato.delete({ where: { id: documentoId } });
+  await registrarAuditoria({ userId: user.id, acao: "REMOVER_DOCUMENTO", entidadeTipo: "DocumentoContrato", entidadeId: documentoId, detalhe: documento.nome });
+  revalidatePath(`/contratos/${documento.contratoId}`);
 }

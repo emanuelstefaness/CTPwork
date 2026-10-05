@@ -163,6 +163,7 @@ model Contrato {
   projetos        Projeto[]
   conversas       Conversa[]
   etapas          EtapaContrato[]
+  documentos      DocumentoContrato[]
 }
 
 // ---------- Perfis (cargos) e permissões ----------
@@ -218,10 +219,33 @@ model EtapaFluxoContrato {
   liberaProjeto    Boolean       @default(false)
   // JSON com ids de perfis que podem concluir esta etapa; vazio = quem pode gerenciar contratos.
   perfisQueAvancam String        @default("[]")
+  // JSON [{ nome, enviaQuem: PREFEITURA | CTP }]: documentos pedidos nesta etapa em todo contrato novo.
+  documentosPadrao String        @default("[]")
+  // Quem conclui é a prefeitura (perfis com "contrato.aprovar"), ex.: aprovação do orçamento.
+  concluidaPelaPrefeitura Boolean @default(false)
   createdAt        DateTime      @default(now())
 
   @@unique([fluxoId, chave])
   @@index([fluxoId, ordem])
+}
+
+// Documento pedido numa etapa do contrato (ex.: "Documentos para contratação"). Quem envia é a
+// prefeitura (o CTP confere e aprova) ou o próprio CTP (vale como entregue ao enviar).
+model DocumentoContrato {
+  id         String    @id @default(cuid())
+  contratoId String
+  contrato   Contrato  @relation(fields: [contratoId], references: [id], onDelete: Cascade)
+  etapaChave String    // chave da EtapaContrato em que o documento é pedido
+  nome       String
+  enviaQuem  String    @default("PREFEITURA") // PREFEITURA | CTP
+  status     String    @default("PENDENTE") // PENDENTE | ENVIADO | APROVADO
+  motivoRecusa String?
+  anexoId    String?   @unique
+  anexo      Anexo?    @relation(fields: [anexoId], references: [id])
+  enviadoEm  DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([contratoId, etapaChave])
 }
 
 // Etapas copiadas para o contrato, com o histórico de quem concluiu cada uma e quando.
@@ -236,6 +260,9 @@ model EtapaContrato {
   exigeAssinaturas Boolean   @default(false)
   liberaProjeto    Boolean   @default(false)
   perfisQueAvancam String    @default("[]")
+  concluidaPelaPrefeitura Boolean @default(false)
+  // A prefeitura devolveu o contrato a esta etapa (ex.: pediu revisão do orçamento) — com o motivo.
+  motivoDevolucao  String?
   concluidaEm      DateTime?
   concluidaPorId   String?
   concluidaPor     User?     @relation("EtapaContratoConcluidaPor", fields: [concluidaPorId], references: [id])
@@ -553,6 +580,7 @@ model Anexo {
   documentoVersao  DocumentoVersionado?
   mensagemChat     MensagemChat?
   mensagemConversa MensagemConversa?
+  documentoContrato DocumentoContrato?
 }
 
 // ---------- Assinatura digital (9.2 — desacoplada via interface própria) ----------

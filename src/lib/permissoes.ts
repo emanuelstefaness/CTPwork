@@ -23,7 +23,8 @@ export const PERMISSOES = {
   "minuta.revisar": { tipo: "EXTERNO", grupo: "Minutas", rotulo: "Revisar minutas", descricao: "Grifar, comentar, concordar, discordar e sugerir redação." },
   "minuta.parecer": { tipo: "EXTERNO", grupo: "Minutas", rotulo: "Dar o parecer da minuta", descricao: "Aprovar a versão ou pedir ajustes ao CTP." },
   "contrato.assinar": { tipo: "EXTERNO", grupo: "Contratos", rotulo: "Assinar contratos pelo município", descricao: "Ex.: só o prefeito ou quem ele designar." },
-  "etapa.enviar": { tipo: "EXTERNO", grupo: "Projetos", rotulo: "Enviar documentos e formulários", descricao: "Checklist de documentos e formulários das etapas." },
+  "contrato.aprovar": { tipo: "EXTERNO", grupo: "Contratos", rotulo: "Aprovar etapas do contrato", descricao: "Ex.: aprovar o orçamento do CTP ou pedir revisão." },
+  "etapa.enviar": { tipo: "EXTERNO", grupo: "Documentos", rotulo: "Enviar documentos e formulários", descricao: "Documentos pedidos nos contratos e nas etapas de projeto, e formulários." },
 } as const satisfies Record<string, { tipo: TipoPerfil; grupo: string; rotulo: string; descricao: string }>;
 
 export type Permissao = keyof typeof PERMISSOES;

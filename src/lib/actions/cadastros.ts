@@ -8,6 +8,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { chaveDaEtapa } from "@/lib/fluxo-contrato";
 import { documentosDoTexto, lerDocumentosPadrao } from "@/lib/documentos-padrao";
+import { documentosPadraoDoFormulario, pedirDocumentosPadrao } from "@/lib/documentos-contrato";
 import { lerPermissoes, permissoesDoTipo, type TipoPerfil } from "@/lib/permissoes";
 import { aindaHaAdministrador, MSG_SEM_ADMINISTRADOR } from "@/lib/usuarios-permissao";
 
@@ -105,7 +106,7 @@ export async function criarPrefeitura(formData: FormData) {
           nome: nomeFluxo,
           descricao: `Tipo de contrato exclusivo da ${nome}.`,
           municipioId: m.id,
-          etapas: { create: fluxoBase.etapas.map(({ ordem, chave, nome, curto, exigeAssinaturas, liberaProjeto, perfisQueAvancam }) => ({ ordem, chave, nome, curto, exigeAssinaturas, liberaProjeto, perfisQueAvancam })) },
+          etapas: { create: fluxoBase.etapas.map(({ ordem, chave, nome, curto, exigeAssinaturas, liberaProjeto, perfisQueAvancam, documentosPadrao, concluidaPelaPrefeitura }) => ({ ordem, chave, nome, curto, exigeAssinaturas, liberaProjeto, perfisQueAvancam, documentosPadrao, concluidaPelaPrefeitura })) },
         },
       });
     }
@@ -407,7 +408,15 @@ async function lerEtapaContrato(formData: FormData) {
     exigeAssinaturas: formData.get("exigeAssinaturas") === "on",
     liberaProjeto: formData.get("liberaProjeto") === "on",
     perfisQueAvancam: JSON.stringify(validos.map((p) => p.id)),
+    concluidaPelaPrefeitura: formData.get("concluidaPelaPrefeitura") === "on",
+    documentosPadrao: documentosPadraoDoFormulario(formData),
   };
+}
+
+function validarQuemConclui(dados: { exigeAssinaturas: boolean; concluidaPelaPrefeitura: boolean }) {
+  if (dados.exigeAssinaturas && dados.concluidaPelaPrefeitura) {
+    throw new Error("A etapa de assinaturas é conduzida pelo CTP; a prefeitura participa assinando.");
+  }
 }
 
 async function validarAssinaturaUnica(fluxoId: string, exigeAssinaturas: boolean, ignorarEtapaId?: string) {
@@ -429,7 +438,7 @@ export async function criarFluxoContrato(formData: FormData) {
     data: {
       nome,
       descricao: base?.descricao ?? null,
-      etapas: base ? { create: base.etapas.map(({ ordem, chave, nome, curto, exigeAssinaturas, liberaProjeto, perfisQueAvancam }) => ({ ordem, chave, nome, curto, exigeAssinaturas, liberaProjeto, perfisQueAvancam })) } : undefined,
+      etapas: base ? { create: base.etapas.map(({ ordem, chave, nome, curto, exigeAssinaturas, liberaProjeto, perfisQueAvancam, documentosPadrao, concluidaPelaPrefeitura }) => ({ ordem, chave, nome, curto, exigeAssinaturas, liberaProjeto, perfisQueAvancam, documentosPadrao, concluidaPelaPrefeitura })) } : undefined,
     },
   });
   await registrarAuditoria({ userId: user.id, acao: "CRIAR", entidadeTipo: "FluxoContrato", entidadeId: fluxo.id, detalhe: base ? `${nome} (cópia de ${base.nome})` : nome });
@@ -467,6 +476,7 @@ export async function criarEtapaFluxoContrato(formData: FormData) {
   const fluxoId = String(formData.get("fluxoId"));
   const dados = await lerEtapaContrato(formData);
   if (!dados.nome) throw new Error("Nome da etapa é obrigatório.");
+  validarQuemConclui(dados);
   await validarAssinaturaUnica(fluxoId, dados.exigeAssinaturas);
 
   const existentes = await prisma.etapaFluxoContrato.findMany({ where: { fluxoId }, select: { chave: true, ordem: true } });
@@ -486,10 +496,27 @@ export async function atualizarEtapaFluxoContrato(formData: FormData) {
   const dados = await lerEtapaContrato(formData);
   if (!dados.nome) throw new Error("Nome da etapa é obrigatório.");
   const etapa = await prisma.etapaFluxoContrato.findUniqueOrThrow({ where: { id: etapaId } });
+  validarQuemConclui(dados);
   await validarAssinaturaUnica(etapa.fluxoId, dados.exigeAssinaturas, etapaId);
   await prisma.etapaFluxoContrato.update({ where: { id: etapaId }, data: dados });
-  await registrarAuditoria({ userId: user.id, acao: "ATUALIZAR", entidadeTipo: "EtapaFluxoContrato", entidadeId: etapaId, detalhe: dados.nome });
+
+  // Contratos em andamento que ainda não passaram desta etapa: mesma regra de quem conclui e os
+  // documentos padrão que faltarem. Nome, ordem e o restante do fluxo deles não mudam.
+  let aplicados = 0;
+  if (formData.get("aplicarAosContratos") === "on") {
+    const abertas = await prisma.etapaContrato.findMany({ where: { chave: etapa.chave, concluidaEm: null, contrato: { fluxoId: etapa.fluxoId } }, select: { id: true, contratoId: true } });
+    for (const e of abertas) {
+      await prisma.etapaContrato.update({ where: { id: e.id }, data: { concluidaPelaPrefeitura: dados.concluidaPelaPrefeitura } });
+      await pedirDocumentosPadrao(e.contratoId, [{ chave: etapa.chave, documentosPadrao: dados.documentosPadrao }]);
+    }
+    aplicados = abertas.length;
+  }
+  await registrarAuditoria({
+    userId: user.id, acao: "ATUALIZAR", entidadeTipo: "EtapaFluxoContrato", entidadeId: etapaId,
+    detalhe: aplicados ? `${dados.nome} · aplicado a ${aplicados} contrato(s) em andamento` : dados.nome,
+  });
   revalidatePath("/cadastros");
+  revalidatePath("/contratos", "layout");
 }
 
 export async function removerEtapaFluxoContrato(etapaId: string) {
