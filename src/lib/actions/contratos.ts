@@ -104,7 +104,7 @@ export async function avancarEtapaContrato(contratoId: string) {
 async function concluirEtapaAtual(contratoId: string, atual: { id: string; chave: string }, proxima: { chave: string; nome: string }, userId: string, acao: string) {
   const emAberto = documentosEmAberto(await prisma.documentoContrato.findMany({ where: { contratoId, etapaChave: atual.chave } }));
   if (emAberto.length) {
-    throw new Error(`Faltam ${emAberto.length} documento(s) desta etapa: ${emAberto.map((d) => d.nome).join(", ")}.`);
+    throw new Error(`${emAberto.length === 1 ? "Falta 1 documento" : `Faltam ${emAberto.length} documentos`} desta etapa: ${emAberto.map((d) => d.nome).join(", ")}.`);
   }
   await prisma.$transaction([
     prisma.etapaContrato.update({ where: { id: atual.id }, data: { concluidaEm: new Date(), concluidaPorId: userId, motivoDevolucao: null } }),

@@ -80,7 +80,7 @@ test("avança com histórico, trava sem assinaturas e libera o projeto no fim", 
   await abrir.getByText("Ana Coordenadora", { exact: true }).click();
   await abrir.getByRole("button", { name: "Abrir fluxo de assinatura" }).click();
   await page.getByRole("button", { name: "Assinar digitalmente" }).click();
-  await expect(page.getByText("Todas as partes assinaram.")).toBeVisible();
+  await expect(page.getByText("Todas as partes assinaram.", { exact: true })).toBeVisible();
 
   await page.getByRole("button", { name: /Avançar para Vigente/ }).click();
   await expect(page.getByRole("heading", { name: "Criar projeto técnico" })).toBeVisible();

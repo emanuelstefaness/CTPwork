@@ -93,13 +93,21 @@ export default async function ContratoDetailPage({ params }: { params: Promise<{
     s.status === "PENDENTE" && (user.tipo === "EXTERNO" ? s.tipo === "EXTERNO" && pode(user, "contrato.assinar") : s.userId === user.id));
 
   const temFluxoAssinatura = !!contrato.fluxoAssinatura;
+  const projetoCriado = contrato.projetos[0];
   function proximoPasso(): string {
-    if (naEtapaFinal) return "Contrato concluído. Nada a fazer aqui.";
+    if (naEtapaFinal) {
+      if (projetoCriado) return `Contrato concluído. O trabalho segue no projeto ${projetoCriado.codigo}.`;
+      if (podeCriarProjeto) return isInterno ? "Contrato concluído. Crie o projeto técnico logo abaixo." : "Contrato concluído. O CTP vai criar o projeto técnico.";
+      return "Contrato concluído. Nada a fazer aqui.";
+    }
     if (etapaDaPrefeitura) {
       if (isInterno) return `Aguardando a decisão da prefeitura em "${etapaAtual?.nome}".`;
       return aprova ? `Analise ${paraAnalisar.length ? "o que o CTP enviou" : "a etapa"} e aprove, ou peça revisão explicando o motivo.` : `Aguardando a aprovação de quem responde pela prefeitura (ex.: o prefeito).`;
     }
     if (naEtapaAssinatura && meuSignatarioPendente) return "Sua assinatura é necessária no contrato.";
+    if (naEtapaAssinatura && assinaturasOk && temFluxoAssinatura) {
+      return isInterno ? `Todas as partes assinaram. Avance para "${proximaEtapa?.nome}".` : "Todas as partes assinaram. O CTP conclui a etapa.";
+    }
     if (!isInterno) {
       if (daPrefeituraPendentes.length && enviaDocumentos) return `Envie ${docs(daPrefeituraPendentes.length)} pedido${daPrefeituraPendentes.length === 1 ? "" : "s"} pelo CTP.`;
       if (paraConferir.length) return `O CTP está conferindo ${docs(paraConferir.length)} que vocês enviaram.`;
@@ -247,7 +255,7 @@ export default async function ContratoDetailPage({ params }: { params: Promise<{
                     !podeAvancar
                       ? `A etapa "${etapaAtual?.nome}" só pode ser concluída por: ${nomesPerfisDaEtapa}.`
                       : avancoBloqueadoPorAssinatura ? `A etapa "${etapaAtual?.nome}" exige todas as assinaturas antes de avançar.`
-                      : emAberto.length ? `Faltam ${docs(emAberto.length)} desta etapa (veja abaixo).` : undefined
+                      : emAberto.length ? `Falta${emAberto.length === 1 ? "" : "m"} ${docs(emAberto.length)} desta etapa (veja abaixo).` : undefined
                   }
                 />
               </div>

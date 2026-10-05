@@ -117,7 +117,9 @@ export default async function EtapaPanel({ etapaId, projeto }: { etapaId: string
         ? `Aguardando o município ${faltaDoMunicipio}.`
         : `O município ainda precisa ${faltaDoMunicipio}. Use "Solicitar ação do município" para avisá-lo.`;
     }
-    return "Tudo recebido e aprovado. Conclua a etapa quando terminar a análise.";
+    return etapa.temChecklist || etapa.temFormulario
+      ? "Tudo recebido e aprovado. Conclua a etapa quando terminar a análise."
+      : "Quando o trabalho desta etapa terminar, clique em \"Concluir etapa\".";
   }
   const passo = proximoPasso();
   const tomStatus = ({ CONCLUIDA: "emerald", AGUARDANDO_MUNICIPIO: "amber", EM_ANDAMENTO: "blue" } as const)[etapa.status as "CONCLUIDA"] ?? "slate";

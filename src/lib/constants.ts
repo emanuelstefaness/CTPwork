@@ -64,7 +64,7 @@ export const STATUS_SIGNATARIO = { PENDENTE: "PENDENTE", ASSINADO: "ASSINADO" } 
 export const ETAPAS_CONTRATO = [
   { chave: "PEDIDO_ORCAMENTO", nome: "Pedido de orçamento", curto: "Pedido" },
   { chave: "EMISSAO_ORCAMENTO", nome: "Emissão de orçamento", curto: "Orçamento" },
-  { chave: "APROVACAO_ORCAMENTO", nome: "Aprovação orçamento", curto: "Aprovação" },
+  { chave: "APROVACAO_ORCAMENTO", nome: "Aprovação do orçamento", curto: "Aprovação" },
   { chave: "DOCUMENTOS_CONTRATACAO", nome: "Documentos para contratação", curto: "Documentos" },
   { chave: "TERMO_REFERENCIA_MINUTA", nome: "Contrato e termo de referência — minuta", curto: "Minuta" },
   { chave: "TERMO_REFERENCIA_ASSINADO", nome: "Contrato e termo de referência — assinado", curto: "Assinado" },
