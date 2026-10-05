@@ -2,7 +2,7 @@ import {
   atualizarEtapaModeloSeguro, atualizarModeloFormularioSeguro, atualizarMunicipioSeguro, atualizarUsuarioSeguro,
   criarEtapaModeloSeguro, criarModeloFormularioSeguro, criarMunicipioSeguro, criarSetorSeguro, criarTipoProjetoSeguro,
   criarUsuarioSeguro, renomearSetorSeguro, renomearTipoProjetoSeguro,
-  alternarFluxoContratoSeguro, atualizarFluxoContratoSeguro, criarFluxoContratoSeguro, reenviarConviteSeguro,
+  alternarFluxoContratoSeguro, atualizarFluxoContratoSeguro, criarFluxoContratoSeguro,
 } from "@/lib/actions/formularios";
 import { EtapaFluxoContratoRow, NovaEtapaFluxoContrato } from "./EtapaFluxoContrato";
 import { FormSeguro } from "@/components/form-seguro";
@@ -116,7 +116,7 @@ export default async function CadastrosPage({ searchParams }: { searchParams: Pr
         <div role="status" className="mb-5 rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-4 text-sm text-emerald-900">
           <p className="font-semibold">{prefeituraNova.nome} cadastrada.</p>
           <ul className="mt-1.5 list-disc space-y-0.5 pl-5 text-emerald-800">
-            {prefeituraNova.usuariosExternos.map((u) => <li key={u.email}>Convite enviado para {u.nome} ({u.email})</li>)}
+            {prefeituraNova.usuariosExternos.map((u) => <li key={u.email}>Acesso criado para {u.nome} — login: {u.email}</li>)}
             {prefeituraNova.usuariosExternos.length === 0 && <li>Nenhum acesso criado ainda — cadastre em Usuários quando quiser.</li>}
             {prefeituraNova.fluxosContrato.map((f) => <li key={f.nome}>Tipo de contrato exclusivo: {f.nome}</li>)}
             {prefeituraNova.tiposProjeto.map((t) => <li key={t.nome}>Tipo de projeto exclusivo: {t.nome}</li>)}
@@ -225,17 +225,10 @@ export default async function CadastrosPage({ searchParams }: { searchParams: Pr
                           <p className="truncate text-sm font-semibold text-slate-800">{u.nome}</p>
                           <Badge tone={u.tipo === "INTERNO" ? "cyan" : "emerald"}>{u.perfil?.nome ?? (u.tipo === "INTERNO" ? "Colaborador" : "Município")}{u.tipo === "INTERNO" ? " · CTP" : ""}</Badge>
                           {!u.ativo && <Badge tone="slate">Desativado{u.desativadoEm ? ` em ${formatarDiaDoEvento(u.desativadoEm)}` : ""}</Badge>}
-                          {u.ativo && u.convitePendente && <Badge tone="amber">Convite pendente</Badge>}
                         </div>
                         <p className="mt-0.5 truncate text-xs text-slate-400">{u.email} · {u.tipo === "INTERNO" ? (u.setor?.nome ?? "sem setor") : (u.municipio?.nome ?? "sem município")}</p>
                       </div>
                       <div className="flex shrink-0 items-center gap-1.5">
-                        {u.ativo && u.convitePendente && (
-                          <FormSeguro acao={reenviarConviteSeguro} className="flex flex-col items-end" erroClassName="text-[11px] text-red-600">
-                            <input type="hidden" name="usuarioId" value={u.id} />
-                            <button className="min-h-8 rounded-lg px-3 py-1 text-[11px] font-semibold text-cyan-700 hover:bg-cyan-50">Reenviar convite</button>
-                          </FormSeguro>
-                        )}
                         {u.id !== gestor.id && <BotaoAcessoUsuario usuarioId={u.id} nome={u.nome} ativo={u.ativo} />}
                         {u.ativo && <Link href={`/cadastros?aba=usuarios&editar=${u.id}`} className="secondary-button min-h-8 px-3 py-1 text-[11px]">Editar</Link>}
                       </div>

@@ -7,11 +7,13 @@ import { registrarAuditoria } from "@/lib/audit";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { chaveDaEtapa } from "@/lib/fluxo-contrato";
-import { enviarConvite, senhaInutilizavel } from "@/lib/convites";
 import { lerPermissoes, permissoesDoTipo, type TipoPerfil } from "@/lib/permissoes";
 import { aindaHaAdministrador, MSG_SEM_ADMINISTRADOR } from "@/lib/usuarios-permissao";
 
 /** Cadastros de apoio (seção 5.7 do prompt mestre) — restritos a Gestor CTP. */
+
+const SENHA_MINIMA = 8;
+const EMAIL_VALIDO = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
 // ---------- Setor ----------
 
@@ -43,8 +45,8 @@ export async function renomearSetor(formData: FormData) {
 
 /**
  * Assistente "Nova prefeitura" (Cadastros › Municípios): num passo só cria o município, os
- * usuários da prefeitura (cada um com seu perfil, recebendo convite por e-mail para criar a
- * própria senha) e, se pedido, fluxos exclusivos copiados de um fluxo existente.
+ * usuários da prefeitura (e-mail, senha e perfil definidos aqui pelo gestor) e, se pedido,
+ * fluxos exclusivos copiados de um fluxo existente.
  */
 export async function criarPrefeitura(formData: FormData) {
   const user = await exigirPermissao("cadastros");
@@ -59,13 +61,15 @@ export async function criarPrefeitura(formData: FormData) {
   // Usuários: linhas do formulário; linhas totalmente vazias são ignoradas.
   const nomes = formData.getAll("usuarioNome").map((v) => String(v).trim());
   const emails = formData.getAll("usuarioEmail").map((v) => String(v).trim().toLowerCase());
+  const senhas = formData.getAll("usuarioSenha").map(String);
   const perfisIds = formData.getAll("usuarioPerfil").map(String);
   const usuarios = nomes
-    .map((n, i) => ({ nome: n, email: emails[i] ?? "", perfilId: perfisIds[i] ?? "" }))
-    .filter((u) => u.nome || u.email);
+    .map((n, i) => ({ nome: n, email: emails[i] ?? "", senha: senhas[i] ?? "", perfilId: perfisIds[i] ?? "" }))
+    .filter((u) => u.nome || u.email || u.senha);
   for (const u of usuarios) {
     if (!u.nome || !u.email) throw new Error("Cada usuário precisa de nome e e-mail.");
-    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(u.email)) throw new Error(`E-mail inválido: ${u.email}`);
+    if (!EMAIL_VALIDO.test(u.email)) throw new Error(`E-mail inválido: ${u.email}`);
+    if (u.senha.length < SENHA_MINIMA) throw new Error(`A senha de ${u.nome} precisa ter ao menos ${SENHA_MINIMA} caracteres.`);
   }
   if (new Set(usuarios.map((u) => u.email)).size !== usuarios.length) throw new Error("Há e-mails repetidos na lista de usuários.");
   const jaCadastrados = await prisma.user.findMany({ where: { email: { in: usuarios.map((u) => u.email) } }, select: { email: true } });
@@ -88,11 +92,11 @@ export async function criarPrefeitura(formData: FormData) {
     for (let n = 2; await prisma.tipoProjetoModelo.findUnique({ where: { chave: chaveProjeto } }); n++) chaveProjeto = `${base}_${n}`;
   }
 
-  const hashes = await Promise.all(usuarios.map(() => senhaInutilizavel()));
+  const hashes = await Promise.all(usuarios.map((u) => bcrypt.hash(u.senha, 10)));
   const municipio = await prisma.$transaction(async (tx) => {
     const m = await tx.municipio.create({ data: { nome, contatoNome, contatoEmail, contatoFone } });
     for (const [i, u] of usuarios.entries()) {
-      await tx.user.create({ data: { nome: u.nome, email: u.email, passwordHash: hashes[i], tipo: "EXTERNO", municipioId: m.id, perfilId: u.perfilId, convitePendente: true } });
+      await tx.user.create({ data: { nome: u.nome, email: u.email, passwordHash: hashes[i], tipo: "EXTERNO", municipioId: m.id, perfilId: u.perfilId } });
     }
     if (fluxoBase) {
       await tx.fluxoContrato.create({
@@ -118,10 +122,6 @@ export async function criarPrefeitura(formData: FormData) {
     }
     return m;
   });
-
-  // Convites depois de gravar: se um e-mail falhar, o cadastro já existe e dá para reenviar.
-  const criados = await prisma.user.findMany({ where: { municipioId: municipio.id }, select: { id: true } });
-  for (const u of criados) await enviarConvite(u.id, user.name ?? "A equipe do CTP");
 
   await registrarAuditoria({
     userId: user.id,
@@ -171,46 +171,30 @@ export async function criarUsuario(formData: FormData) {
   const tipo = String(formData.get("tipo"));
 
   if (!nome || !email) throw new Error("Nome e e-mail são obrigatórios.");
-  if (!/^[^@s]+@[^@s]+.[^@s]+$/.test(email)) throw new Error("Informe um e-mail válido.");
-  // Sem senha = convite por e-mail (a pessoa cria a própria senha). Com senha, vale a digitada.
-  if (senha && senha.length < 8) throw new Error("A senha precisa ter ao menos 8 caracteres — ou deixe em branco para enviar um convite.");
+  if (!EMAIL_VALIDO.test(email)) throw new Error("Informe um e-mail válido.");
+  if (senha.length < SENHA_MINIMA) throw new Error(`A senha precisa ter ao menos ${SENHA_MINIMA} caracteres.`);
   if (tipo !== "INTERNO" && tipo !== "EXTERNO") throw new Error("Tipo de usuário inválido.");
 
   const existente = await prisma.user.findUnique({ where: { email } });
   if (existente) throw new Error(`Já existe um usuário com o e-mail "${email}".`);
 
-  const passwordHash = senha ? await bcrypt.hash(senha, 10) : await senhaInutilizavel();
+  const passwordHash = await bcrypt.hash(senha, 10);
   const perfil = await perfilDoFormulario(formData, tipo);
-  let novoId: string;
 
   if (tipo === "INTERNO") {
     const setorId = String(formData.get("setorId") ?? "") || null;
     if (!setorId) throw new Error("Selecione o setor do colaborador.");
 
     const novo = await prisma.user.create({ data: { nome, email, passwordHash, tipo, perfilId: perfil.id, perfilInterno: perfilLegado(perfil), setorId } });
-    novoId = novo.id;
     await registrarAuditoria({ userId: user.id, acao: "CRIAR", entidadeTipo: "User", entidadeId: novo.id, detalhe: `${email} · ${perfil.nome}` });
   } else {
     const municipioId = String(formData.get("municipioId") ?? "") || null;
     if (!municipioId) throw new Error("Selecione o município deste usuário externo.");
 
     const novo = await prisma.user.create({ data: { nome, email, passwordHash, tipo, perfilId: perfil.id, municipioId } });
-    novoId = novo.id;
     await registrarAuditoria({ userId: user.id, acao: "CRIAR", entidadeTipo: "User", entidadeId: novo.id, detalhe: `${email} · ${perfil.nome}` });
   }
 
-  if (!senha) await enviarConvite(novoId, user.name ?? "A equipe do CTP");
-  revalidatePath("/cadastros");
-}
-
-/** Manda de novo o convite de primeiro acesso (o anterior deixa de valer). */
-export async function reenviarConvite(usuarioId: string) {
-  const user = await exigirPermissao("cadastros");
-  const alvo = await prisma.user.findUnique({ where: { id: usuarioId } });
-  if (!alvo) throw new Error("Usuário não encontrado.");
-  if (!alvo.ativo) throw new Error("Reative o acesso antes de reenviar o convite.");
-  await enviarConvite(usuarioId, user.name ?? "A equipe do CTP");
-  await registrarAuditoria({ userId: user.id, acao: "REENVIAR_CONVITE", entidadeTipo: "User", entidadeId: usuarioId, detalhe: alvo.email });
   revalidatePath("/cadastros");
 }
 
@@ -231,7 +215,7 @@ export async function atualizarUsuario(formData: FormData) {
   const nome = String(formData.get("nome") ?? "").trim();
   const novaSenha = String(formData.get("novaSenha") ?? "");
   if (!nome) throw new Error("Nome é obrigatório.");
-  if (novaSenha && novaSenha.length < 6) throw new Error("A nova senha precisa ter ao menos 6 caracteres.");
+  if (novaSenha && novaSenha.length < SENHA_MINIMA) throw new Error(`A nova senha precisa ter ao menos ${SENHA_MINIMA} caracteres.`);
 
   const alvo = await prisma.user.findUniqueOrThrow({ where: { id: usuarioId } });
   const perfil = await perfilDoFormulario(formData, alvo.tipo);

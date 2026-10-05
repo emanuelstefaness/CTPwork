@@ -20,7 +20,7 @@ export default async function NovaPrefeituraPage() {
       <BackLink href="/cadastros?aba=municipios" label="Municípios" />
       <PageHeader
         title="Nova prefeitura"
-        description="Cadastre a prefeitura, os acessos dela e, se quiser, fluxos exclusivos — tudo de uma vez. Os convites saem por e-mail."
+        description="Cadastre a prefeitura, os acessos dela e, se quiser, fluxos exclusivos — tudo de uma vez."
       />
       <NovaPrefeituraForm
         perfisPrefeitura={perfis}

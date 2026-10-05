@@ -59,8 +59,6 @@ model User {
   // Acesso desativado pelo gestor (ex.: servidor que saiu da prefeitura): não entra mais, é
   // desconectado na hora e sai das listas de escolha e dos avisos — o histórico fica intacto.
   ativo         Boolean   @default(true)
-  // Criado por convite e ainda não definiu a própria senha.
-  convitePendente Boolean @default(false)
   desativadoEm  DateTime?
   createdAt     DateTime  @default(now())
 
@@ -611,7 +609,6 @@ model TokenSenha {
   userId    String
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   tokenHash String    @unique
-  finalidade String   @default("REDEFINICAO") // REDEFINICAO (esqueci a senha) | CONVITE (primeiro acesso)
   expiraEm  DateTime
   usadoEm   DateTime?
   createdAt DateTime  @default(now())

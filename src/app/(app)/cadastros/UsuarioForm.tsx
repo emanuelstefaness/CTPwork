@@ -2,7 +2,9 @@
 
 import type { Resultado } from "@/lib/resultado";
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { useEnvio } from "@/components/use-envio";
+import { CampoSenha } from "@/components/campo-senha";
 
 type Setor = { id: string; nome: string };
 type Municipio = { id: string; nome: string };
@@ -41,7 +43,9 @@ export default function UsuarioForm({
   action: (formData: FormData) => Promise<Resultado<unknown>>;
 }) {
   const [tipo, setTipo] = useState<"INTERNO" | "EXTERNO">((usuario?.tipo as "INTERNO" | "EXTERNO") ?? "INTERNO");
-  const { onSubmit, pendente, erro } = useEnvio(action);
+  const router = useRouter();
+  // Criar: limpa o formulário para o próximo. Editar: fecha a edição e volta para a lista.
+  const { onSubmit, pendente, erro } = useEnvio(action, modo === "criar" ? (form) => form.reset() : () => router.replace("/cadastros?aba=usuarios"));
 
   return (
     <form onSubmit={onSubmit} className="flex flex-col gap-3">
@@ -58,11 +62,7 @@ export default function UsuarioForm({
             E-mail
             <input name="email" type="email" required className="form-control mt-1 py-2 text-sm" />
           </label>
-          <label className="text-xs font-semibold text-slate-600">
-            Senha inicial <span className="font-normal text-slate-400">(opcional)</span>
-            <input name="senha" type="password" minLength={8} autoComplete="new-password" className="form-control mt-1 py-2 text-sm" />
-            <span className="mt-1 block font-normal text-slate-400">Em branco: a pessoa recebe um convite por e-mail e cria a própria senha.</span>
-          </label>
+          <CampoSenha name="senha" label="Senha" />
           <div>
             <p className="mb-1.5 text-xs font-semibold text-slate-600">Tipo</p>
             <div className="flex gap-2">
@@ -116,10 +116,7 @@ export default function UsuarioForm({
       </label>
 
       {modo === "editar" && (
-        <label className="text-xs font-semibold text-slate-600">
-          Nova senha (opcional)
-          <input name="novaSenha" type="password" minLength={6} placeholder="Deixe em branco para manter a atual" className="form-control mt-1 py-2 text-sm" />
-        </label>
+        <CampoSenha name="novaSenha" label="Nova senha (opcional)" obrigatoria={false} placeholder="Em branco: mantém a atual" />
       )}
 
       {erro && <p className="text-xs text-red-600">{erro}</p>}

@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { BuildingLibraryIcon, EnvelopeIcon, PlusIcon, RectangleStackIcon, TrashIcon } from "@heroicons/react/24/outline";
+import { BuildingLibraryIcon, KeyIcon, PlusIcon, RectangleStackIcon, TrashIcon } from "@heroicons/react/24/outline";
+import { CampoSenha } from "@/components/campo-senha";
 import { FormSeguro } from "@/components/form-seguro";
 import { criarPrefeituraSeguro } from "@/lib/actions/formularios";
 
@@ -60,9 +61,9 @@ export default function NovaPrefeituraForm({
         </div>
       </Secao>
 
-      <Secao numero={2} titulo="Acessos da prefeitura" descricao="Cada pessoa recebe um convite por e-mail para criar a própria senha. Ela só verá o que é desta prefeitura." icone={EnvelopeIcon}>
+      <Secao numero={2} titulo="Acessos da prefeitura" descricao="Defina o e-mail e a senha de cada pessoa e repasse para ela. Cada uma só verá o que é desta prefeitura e pode trocar a senha depois em Minha conta." icone={KeyIcon}>
         {linhas.map((id, i) => (
-          <div key={id} className="grid gap-2 rounded-xl border border-slate-200 bg-slate-50/60 p-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_170px_auto] sm:items-end">
+          <div key={id} className="grid gap-2 rounded-xl border border-slate-200 bg-slate-50/60 p-3 sm:grid-cols-2 sm:items-end xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_220px_160px_auto]">
             <label className="text-xs font-semibold text-slate-600">
               Nome
               <input name="usuarioNome" className="form-control mt-1 py-2 text-sm" placeholder="Ex.: Maria Souza" aria-label={`Nome do usuário ${i + 1}`} />
@@ -71,6 +72,7 @@ export default function NovaPrefeituraForm({
               E-mail
               <input name="usuarioEmail" type="email" className="form-control mt-1 py-2 text-sm" placeholder="maria@prefeitura.gov.br" aria-label={`E-mail do usuário ${i + 1}`} />
             </label>
+            <CampoSenha name="usuarioSenha" label="Senha" obrigatoria={false} rotuloAcessivel={`Senha do usuário ${i + 1}`} />
             <label className="text-xs font-semibold text-slate-600">
               Perfil
               <select name="usuarioPerfil" defaultValue={perfilPadrao} className="form-control mt-1 py-2 text-sm" aria-label={`Perfil do usuário ${i + 1}`}>
@@ -115,7 +117,7 @@ export default function NovaPrefeituraForm({
 
       <div className="flex justify-end gap-2 border-t border-slate-100 bg-slate-50/60 px-6 py-4">
         <Link href="/cadastros?aba=municipios" className="secondary-button">Cancelar</Link>
-        <button type="submit" className="primary-button"><BuildingLibraryIcon className="h-4 w-4" />Cadastrar prefeitura e enviar convites</button>
+        <button type="submit" className="primary-button"><BuildingLibraryIcon className="h-4 w-4" />Cadastrar prefeitura</button>
       </div>
     </FormSeguro>
   );

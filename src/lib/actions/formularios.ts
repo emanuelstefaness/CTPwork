@@ -9,7 +9,7 @@ import {
 } from "./etapas";
 import { criarEventoCronograma, removerEventoCronograma } from "./cronograma";
 import {
-  alterarAcessoUsuario, criarPrefeitura, reenviarConvite, alternarFluxoContrato, atualizarPerfil, criarPerfil, excluirPerfil, atualizarEtapaFluxoContrato, atualizarFluxoContrato, criarEtapaFluxoContrato,
+  alterarAcessoUsuario, criarPrefeitura, alternarFluxoContrato, atualizarPerfil, criarPerfil, excluirPerfil, atualizarEtapaFluxoContrato, atualizarFluxoContrato, criarEtapaFluxoContrato,
   criarFluxoContrato, moverEtapaFluxoContrato, removerEtapaFluxoContrato, atualizarEtapaModelo, atualizarModeloFormulario, atualizarMunicipio, atualizarUsuario, criarEtapaModelo,
   criarModeloFormulario, criarMunicipio, criarSetor, criarTipoProjeto, criarUsuario, renomearSetor, renomearTipoProjeto,
 } from "./cadastros";
@@ -164,14 +164,10 @@ export async function renomearTipoProjetoSeguro(formData: FormData): R {
   return capturar(() => renomearTipoProjeto(formData));
 }
 
-/* ── Prefeituras e convites ── */
+/* ── Prefeituras ── */
 
 export async function criarPrefeituraSeguro(formData: FormData): R {
   return capturar(() => criarPrefeitura(formData));
-}
-
-export async function reenviarConviteSeguro(formData: FormData): R {
-  return capturar(() => reenviarConvite(campo(formData, "usuarioId")));
 }
 
 /* ── Perfis ── */
