@@ -9,6 +9,7 @@
     "lint": "eslint",
     "seed": "tsx prisma/seed.ts",
     "seed:demo": "tsx prisma/seed-demo.ts",
+    "seed:vitrine": "tsx prisma/seed-vitrine.ts",
     "test": "npm run test:unit && npm run test:e2e",
     "test:unit": "tsx --test \"testes/unidade/**/*.test.ts\"",
     "test:e2e": "playwright test",
