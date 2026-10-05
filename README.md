@@ -27,6 +27,18 @@ npm run dev
 
 Abre em `http://localhost:3000` (ou na porta configurada).
 
+**Banco limpo (sem dados de exemplo)** — para começar a usar de verdade:
+
+```bash
+npm run banco:limpo
+```
+
+Pare o `npm run dev` antes. Apaga tudo (banco e arquivos enviados em `storage/`) e deixa só a configuração
+base (`prisma/base.ts`: tipos de projeto, setores, modelos de formulário; perfis e o tipo de contrato Padrão vêm
+das migrações) e um administrador, `admin@ctp.org.br` — troque a senha em Minha conta no primeiro acesso (ou
+defina `ADMIN_EMAIL` / `ADMIN_SENHA` antes de rodar). Para voltar à demonstração: `npm run seed`,
+`npm run seed:demo` e `npm run seed:vitrine`.
+
 Variáveis de ambiente (`.env`, fora do git):
 
 | Variável | Para quê |
@@ -37,7 +49,7 @@ Variáveis de ambiente (`.env`, fora do git):
 | `APP_URL` | Endereço público do sistema (ex.: `https://work.ctp.org.br`), usado nos links dos e-mails. |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS` | Servidor de e-mail. **Sem `SMTP_HOST` nenhum e-mail sai**: eles são gravados em `storage/emails/*.html` para conferência. `SMTP_SECURE=true` força TLS direto (padrão: só na porta 465). |
 | `EMAIL_FROM` | Remetente, ex.: `CTP Work <nao-responda@ctp.org.br>`. |
-| `MOSTRAR_CONTAS_DEMO=true` | Mostra as contas de demonstração na tela de login em produção (em desenvolvimento aparecem sempre). |
+| `MOSTRAR_CONTAS_DEMO` | `true` mostra as contas de demonstração na tela de login em produção; `false` esconde também em desenvolvimento. Elas só aparecem se existirem no banco (no banco limpo, não aparecem). |
 
 > Não ligue o SMTP num banco com os dados de demonstração: os usuários de exemplo têm e-mails de domínios reais de prefeituras.
 

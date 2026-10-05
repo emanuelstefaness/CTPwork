@@ -1,60 +1,14 @@
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
+import { semearConfiguracaoBase } from "./base";
 
 const prisma = new PrismaClient();
-
-// Fluxos de projeto configuráveis (TipoProjetoModelo + EtapaModelo) — seed dos 3 tipos que já
-// existiam fixos em código, agora como dados editáveis em /cadastros?aba=fluxos. update espelha
-// create de propósito: um upsert com update:{} nunca corrige nome/ordem/capacidades de uma etapa
-// já semeada (ver bug "Fase 3" vs "Fase 03" corrigido nesta mesma base).
-async function seedTipoProjeto(chave: string, nome: string, etapas: { nome: string; temInformacoesProjeto?: boolean; temFormulario?: boolean; temChecklist?: boolean; temRevisao?: boolean; modoRevisao?: string; documentosPadrao?: string[] }[]) {
-  const tipo = await prisma.tipoProjetoModelo.upsert({ where: { chave }, update: { nome }, create: { chave, nome } });
-  for (const [i, etapa] of etapas.entries()) {
-    const dados = {
-      nome: etapa.nome, ordem: i,
-      temInformacoesProjeto: etapa.temInformacoesProjeto ?? false,
-      temFormulario: etapa.temFormulario ?? false,
-      temChecklist: etapa.temChecklist ?? false,
-      temRevisao: etapa.temRevisao ?? false,
-      modoRevisao: etapa.modoRevisao ?? "ARTIGO",
-      documentosPadrao: JSON.stringify(etapa.documentosPadrao ?? []),
-    };
-    const id = `etapa-modelo-${chave.toLowerCase()}-${i}`;
-    await prisma.etapaModelo.upsert({
-      where: { id },
-      update: dados,
-      create: { id, tipoProjetoModeloId: tipo.id, ...dados },
-    });
-  }
-  return tipo;
-}
 
 async function main() {
   const senha = await bcrypt.hash("ctpwork123", 10);
 
-  await seedTipoProjeto("ESTATUTO_PCCS", "Estatuto e PCCS", [
-    { nome: "Informações iniciais", temInformacoesProjeto: true },
-    { nome: "Documentos iniciais", temFormulario: true, temChecklist: true },
-    { nome: "Diagnóstico inicial", temRevisao: true, modoRevisao: "DOCUMENTO_INTEIRO" },
-    { nome: "Minutas versão 01", temRevisao: true, modoRevisao: "ARTIGO" },
-    { nome: "Análise e devolutiva 01", temRevisao: true, modoRevisao: "DOCUMENTO_INTEIRO" },
-    { nome: "Minutas 02", temRevisao: true, modoRevisao: "ARTIGO" },
-    { nome: "Devolutiva 02", temRevisao: true, modoRevisao: "DOCUMENTO_INTEIRO" },
-  ]);
-  await seedTipoProjeto("PLANO_DIRETOR", "Plano Diretor", [
-    { nome: "Informações iniciais", temInformacoesProjeto: true },
-    { nome: "Documentos iniciais", temFormulario: true, temChecklist: true },
-    { nome: "Fase 01 — Leitura técnica e comunitária", temRevisao: true, modoRevisao: "DOCUMENTO_INTEIRO" },
-    { nome: "Fase 02 — Diretrizes e propostas", temRevisao: true, modoRevisao: "DOCUMENTO_INTEIRO" },
-    { nome: "Fase 03 — Minuta do projeto de lei", temRevisao: true, modoRevisao: "ARTIGO" },
-    { nome: "Fase 04 — Audiência pública", temChecklist: true, documentosPadrao: ["Edital de convocação da audiência pública", "Ata da audiência pública", "Lista de presença"] },
-    { nome: "Fase 05 — Versão final e envio à Câmara", temRevisao: true, modoRevisao: "DOCUMENTO_INTEIRO" },
-  ]);
-  await seedTipoProjeto("PERSONALIZADO", "Personalizado", [
-    { nome: "Informações iniciais", temInformacoesProjeto: true },
-    { nome: "Documentos iniciais", temFormulario: true, temChecklist: true },
-    { nome: "Fase 01", temRevisao: true, modoRevisao: "DOCUMENTO_INTEIRO" },
-  ]);
+  // Tipos de projeto, setores e modelos de formulário: a mesma base do banco limpo (prisma/base.ts).
+  await semearConfiguracaoBase(prisma);
 
   const setorJuridico = await prisma.setor.upsert({
     where: { nome: "Jurídico" },

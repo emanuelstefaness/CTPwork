@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import LoginForm from "./LoginForm";
+import { prisma } from "@/lib/prisma";
 import { CheckCircleIcon, DocumentCheckIcon, ShieldCheckIcon } from "@heroicons/react/24/outline";
 
 export const metadata: Metadata = { title: "Entrar" };
@@ -10,8 +11,10 @@ export default async function LoginPage({
   searchParams: Promise<{ callbackUrl?: string; sessao?: string }>;
 }) {
   const { callbackUrl, sessao } = await searchParams;
-  // Em produção as contas de demonstração (com a senha) só aparecem se pedido explicitamente.
-  const mostrarContasDemo = process.env.NODE_ENV !== "production" || process.env.MOSTRAR_CONTAS_DEMO === "true";
+  // Em produção as contas de demonstração (com a senha) só aparecem se pedido explicitamente; e só
+  // quando elas existem no banco (no banco limpo, sem dados de exemplo, o atalho some).
+  const permitido = process.env.MOSTRAR_CONTAS_DEMO === "true" || (process.env.NODE_ENV !== "production" && process.env.MOSTRAR_CONTAS_DEMO !== "false");
+  const mostrarContasDemo = permitido && (await prisma.user.count({ where: { email: "gestor@ctp.org.br", ativo: true } })) > 0;
 
   return (
     <div className="grid min-h-screen bg-white lg:grid-cols-[1.05fr_0.95fr]">

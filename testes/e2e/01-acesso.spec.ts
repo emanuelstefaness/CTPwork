@@ -74,6 +74,8 @@ test.describe("Acesso e conta", () => {
     const email = MUNICIPIO.tatiane;
     await page.goto("/login");
     await page.getByRole("link", { name: "Esqueci minha senha" }).click();
+    // Espera o formulário ficar interativo: enviado antes disso, o navegador faz um envio comum e nada aparece.
+    await page.waitForLoadState("networkidle");
     await page.getByLabel("E-mail").fill(email);
     await page.getByRole("button", { name: "Enviar link" }).click();
     await expect(page.getByRole("status")).toContainText("Se houver uma conta com esse e-mail");
@@ -83,6 +85,7 @@ test.describe("Acesso e conta", () => {
     const caminho = new URL(link).pathname + new URL(link).search;
 
     await page.goto(caminho);
+    await page.waitForLoadState("networkidle");
     await page.getByLabel("Nova senha", { exact: true }).fill("somenteletras");
     await page.getByLabel("Repita a nova senha", { exact: true }).fill("somenteletras");
     await page.getByRole("button", { name: "Salvar nova senha" }).click();
