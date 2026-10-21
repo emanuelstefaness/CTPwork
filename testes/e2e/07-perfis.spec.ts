@@ -5,13 +5,13 @@ import { CTP, MUNICIPIO, SENHA, criarPropriaSenha, entrar, erroDoFormulario, sel
 test.describe.configure({ mode: "serial" });
 
 async function abrirPerfil(page: Page, nome: string) {
-  await page.goto("/cadastros?aba=perfis");
+  await page.goto("/cadastros/perfis");
   await page.getByRole("link", { name: new RegExp(`^${nome}`) }).click();
   await expect(page.getByRole("heading", { name: `Perfil — ${nome}` })).toBeVisible();
 }
 
 async function criarPerfil(page: Page, nome: string, tipo: "Equipe do CTP" | "Prefeitura", base: string) {
-  await page.goto("/cadastros?aba=perfis");
+  await page.goto("/cadastros/perfis?novo=1");
   const form = page.locator("form", { hasText: "Criar perfil" });
   await form.getByLabel("Nome").fill(nome);
   await form.getByLabel("Para quem").selectOption({ label: tipo });
@@ -20,14 +20,18 @@ async function criarPerfil(page: Page, nome: string, tipo: "Equipe do CTP" | "Pr
   await expect(page.getByRole("heading", { name: `Perfil — ${nome}` })).toBeVisible();
 }
 
-async function trocarPerfilDoUsuario(page: Page, email: string, perfil: string) {
-  await page.goto("/cadastros?aba=usuarios");
-  await page.locator("div.divide-y > div").filter({ hasText: email }).getByRole("link", { name: "Editar" }).click();
-  const form = page.locator("form", { hasText: "Salvar alterações" });
-  await form.getByLabel("Perfil").selectOption({ label: perfil });
-  await form.getByRole("button", { name: "Salvar alterações" }).click();
-  await expect(page.locator("div.divide-y > div").filter({ hasText: email })).toContainText(perfil);
+/** Pessoa da equipe (Equipe do CTP) ou acesso de uma prefeitura (página da prefeitura). */
+async function trocarPerfilDoUsuario(page: Page, email: string, perfil: string, onde = "/cadastros/equipe") {
+  await page.goto(onde);
+  const linha = page.locator(`[data-pessoa="${email}"]`);
+  await linha.getByRole("link", { name: "Editar" }).click();
+  await linha.getByLabel("Perfil de acesso").selectOption({ label: perfil });
+  await linha.getByRole("button", { name: "Salvar alterações" }).click();
+  await expect(linha.getByRole("button", { name: "Salvar alterações" })).toHaveCount(0);
+  await expect(linha).toContainText(perfil);
 }
+
+const PATO_BRANCO = "/cadastros/prefeituras/municipio-pato-branco";
 
 test("perfil da prefeitura sem parecer: revisa a minuta, mas não aprova nem pede ajustes", async ({ page }) => {
   await entrar(page, CTP.ana);
@@ -35,7 +39,7 @@ test("perfil da prefeitura sem parecer: revisa a minuta, mas não aprova nem ped
   await page.getByLabel(/Dar o parecer da minuta/).uncheck();
   await page.getByRole("button", { name: "Salvar perfil" }).click();
   await expect(page.getByLabel(/Dar o parecer da minuta/)).not.toBeChecked();
-  await trocarPerfilDoUsuario(page, MUNICIPIO.juliana, "Servidor técnico");
+  await trocarPerfilDoUsuario(page, MUNICIPIO.juliana, "Servidor técnico", PATO_BRANCO);
 
   await entrar(page, MUNICIPIO.juliana);
   await page.goto("/projetos/projeto-demo-pato-branco-pd?etapa=etapa-pb-fase1");
@@ -50,7 +54,7 @@ test("perfil da prefeitura sem parecer: revisa a minuta, mas não aprova nem ped
 
   // Devolve o perfil padrão.
   await entrar(page, CTP.ana);
-  await trocarPerfilDoUsuario(page, MUNICIPIO.juliana, "Município");
+  await trocarPerfilDoUsuario(page, MUNICIPIO.juliana, "Município", PATO_BRANCO);
 });
 
 test("perfil do CTP que vê só onde participa, sem dashboard e sem gerenciar contratos", async ({ page }) => {
@@ -63,15 +67,16 @@ test("perfil do CTP que vê só onde participa, sem dashboard e sem gerenciar co
   await expect(page.getByLabel(/Vê só os contratos e projetos em que participa/)).toBeChecked();
 
   // Cria uma pessoa com esse perfil.
-  await page.goto("/cadastros?aba=usuarios");
-  const novo = page.locator("form", { hasText: "Criar usuário" });
+  await page.goto("/cadastros/equipe");
+  await page.getByRole("link", { name: "Nova pessoa" }).click();
+  const novo = page.locator("form", { hasText: "Cadastrar pessoa" });
   await novo.locator("input[name=nome]").fill("Paula Jurídica");
   await novo.locator("input[name=email]").fill("paula.juridica@ctp.org.br");
   await novo.locator("input[name=senha]").fill(SENHA);
   await novo.getByLabel("Setor").selectOption({ index: 1 });
-  await novo.getByLabel("Perfil").selectOption({ label: "Jurídico" });
-  await novo.getByRole("button", { name: "Criar usuário" }).click();
-  await expect(page.locator("div.divide-y > div").filter({ hasText: "paula.juridica@ctp.org.br" })).toContainText("Jurídico");
+  await novo.getByLabel("Perfil de acesso").selectOption({ label: "Jurídico" });
+  await novo.getByRole("button", { name: "Cadastrar pessoa" }).click();
+  await expect(page.locator('[data-pessoa="paula.juridica@ctp.org.br"]')).toContainText("Jurídico");
 
   await entrar(page, "paula.juridica@ctp.org.br");
   await criarPropriaSenha(page, "paula.juridica@ctp.org.br", SENHA, "Paula2026ok"); // senha dada pelo gestor: troca no 1º acesso
@@ -94,20 +99,24 @@ test("perfil do CTP que vê só onde participa, sem dashboard e sem gerenciar co
 
 test("etapa de contrato restrita a um perfil trava para os demais", async ({ page }) => {
   await entrar(page, CTP.ana);
-  await page.goto("/cadastros?aba=fluxos-contrato");
-  await page.getByPlaceholder("Ex.: Dispensa de licitação").fill("Termo aditivo");
-  await page.getByRole("button", { name: "Criar" }).click();
-  await expect(page.getByRole("heading", { name: "Etapas — Termo aditivo" })).toBeVisible();
-  const nova = page.locator("form", { hasText: "Adicionar etapa ao final" });
+  await page.goto("/cadastros/tipos-de-contrato?novo=1");
+  await page.getByLabel("Nome").fill("Termo aditivo");
+  await page.getByRole("button", { name: "Criar tipo" }).click();
+  await expect(page.getByRole("heading", { name: "Termo aditivo", exact: true })).toBeVisible();
+  const nova = page.getByRole("form", { name: "Nova etapa" });
   await nova.getByLabel("Nome da etapa").fill("Aprovação da diretoria");
-  await nova.getByLabel(/Rótulo curto/).fill("Diretoria");
-  await nova.getByRole("checkbox", { name: "Gestor" }).check();
+  await nova.getByLabel(/Nome curto/).fill("Diretoria");
+  // Quem conclui: a equipe do CTP, mas só o perfil Gestor.
+  await nova.getByLabel(/Só alguns perfis/).check();
   await nova.getByRole("button", { name: "Adicionar etapa" }).click();
-  await expect(page.getByText("Só: Gestor")).toBeVisible();
+  await expect(nova.getByRole("alert")).toContainText("Marque ao menos um perfil");
+  await nova.getByText("Gestor", { exact: true }).click();
+  await nova.getByRole("button", { name: "Adicionar etapa" }).click();
+  await expect(page.locator('[data-etapa="Aprovação da diretoria"]')).toContainText("Quem conclui: só Gestor");
   await nova.getByLabel("Nome da etapa").fill("Aditivo firmado");
-  await nova.getByLabel(/Rótulo curto/).fill("Firmado");
+  await nova.getByLabel(/Nome curto/).fill("Firmado");
   await nova.getByRole("button", { name: "Adicionar etapa" }).click();
-  await expect(page.getByText("Aditivo firmado")).toBeVisible();
+  await expect(page.locator('[data-etapa="Aditivo firmado"]')).toContainText("o contrato está concluído");
 
   await page.goto("/contratos/novo");
   await page.getByLabel("Tipo de contrato").selectOption({ label: "Termo aditivo" });

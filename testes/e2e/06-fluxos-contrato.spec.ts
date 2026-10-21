@@ -8,24 +8,30 @@ const TIPO = "Dispensa de licitação";
 const OBJETO = "Assessoria para revisão do Código Tributário";
 let enderecoContrato = "";
 
+const novaEtapa = (page: Page) => page.getByRole("form", { name: "Nova etapa" });
+
 async function adicionarEtapa(page: Page, nome: string, curto: string, opcoes: { assinaturas?: boolean; projeto?: boolean } = {}) {
-  const form = page.locator("form", { hasText: "Adicionar etapa ao final" });
+  const form = novaEtapa(page);
   await form.getByLabel("Nome da etapa").fill(nome);
-  await form.getByLabel(/Rótulo curto/).fill(curto);
-  if (opcoes.assinaturas) await form.getByLabel(/Exige assinaturas/).check();
-  if (opcoes.projeto) await form.getByLabel(/Libera o projeto/).check();
+  await form.getByLabel(/Nome curto/).fill(curto);
+  if (opcoes.assinaturas) await form.getByLabel(/Coleta de assinaturas/).check();
+  if (opcoes.projeto) await form.getByLabel(/Libera o projeto técnico/).check();
   await form.getByRole("button", { name: "Adicionar etapa" }).click();
 }
 
 test("gestor cria um tipo de contrato com as próprias etapas", async ({ page }) => {
   await entrar(page, CTP.ana);
-  await page.goto("/cadastros?aba=fluxos-contrato");
-  await expect(page.getByRole("link", { name: /Padrão/ })).toBeVisible(); // o fluxo que já existia
+  await page.goto("/cadastros/tipos-de-contrato");
+  await expect(page.getByRole("link", { name: /^Padrão/ }).first()).toBeVisible(); // o tipo que já existia
 
-  await page.getByPlaceholder("Ex.: Dispensa de licitação").fill(TIPO);
-  await page.getByRole("button", { name: "Criar" }).click();
-  await expect(page.getByRole("heading", { name: `Etapas — ${TIPO}` })).toBeVisible();
+  await page.getByRole("link", { name: "Novo tipo de contrato" }).click();
+  await expect(page.getByRole("heading", { name: "Novo tipo de contrato" })).toBeVisible();
+  await page.getByLabel("Nome").fill(TIPO);
+  await page.getByRole("button", { name: "Criar tipo" }).click();
+  await expect(page.getByRole("heading", { name: TIPO, exact: true })).toBeVisible();
   await expect(page.getByText("precisa de pelo menos 2 etapas")).toBeVisible();
+  // Sem etapas, o formulário de nova etapa já vem aberto.
+  await expect(novaEtapa(page)).toBeVisible();
 
   await adicionarEtapa(page, "Solicitação da prefeitura", "Solicitação");
   await expect(page.getByText("Solicitação da prefeitura")).toBeVisible();
@@ -34,9 +40,9 @@ test("gestor cria um tipo de contrato com as próprias etapas", async ({ page })
 
   // Só pode haver uma etapa de assinaturas por tipo.
   await adicionarEtapa(page, "Segunda assinatura", "Assinatura 2", { assinaturas: true });
-  await expect(page.locator("form", { hasText: "Adicionar etapa ao final" }).getByRole("alert")).toContainText("já é a de assinaturas");
+  await expect(novaEtapa(page).getByRole("alert")).toContainText("já é a de assinaturas");
 
-  await page.locator("form", { hasText: "Adicionar etapa ao final" }).getByLabel(/Exige assinaturas/).uncheck();
+  await novaEtapa(page).getByLabel(/Coleta de assinaturas/).uncheck();
   await adicionarEtapa(page, "Contrato vigente", "Vigente", { projeto: true });
   await expect(page.getByText("Contrato vigente")).toBeVisible();
   await expect(page.getByText("precisa de pelo menos 2 etapas")).toHaveCount(0);
@@ -109,7 +115,7 @@ test("contratos antigos continuam no fluxo Padrão, com as 6 etapas", async ({ p
 
 test("tipo desativado some da criação de contratos", async ({ page }) => {
   await entrar(page, CTP.ana);
-  await page.goto("/cadastros?aba=fluxos-contrato");
+  await page.goto("/cadastros/tipos-de-contrato");
   await page.getByRole("link", { name: new RegExp(TIPO) }).click();
   await page.getByRole("button", { name: "Desativar tipo" }).click();
   await expect(page.getByRole("button", { name: "Ativar tipo", exact: true })).toBeVisible();

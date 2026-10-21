@@ -279,7 +279,7 @@ async function main() {
   const planoDiretor = await prisma.tipoProjetoModelo.findUnique({ where: { chave: "PLANO_DIRETOR" }, include: { etapas: { orderBy: { ordem: "asc" } } } });
   if (planoDiretor) {
     // Cópia exclusiva sempre igual ao Plano Diretor atual (nenhum projeto usa esse tipo ainda).
-    const etapas = planoDiretor.etapas.map(({ ordem, nome, temInformacoesProjeto, temFormulario, temChecklist, temRevisao, modoRevisao, documentosPadrao }) => ({ ordem, nome, temInformacoesProjeto, temFormulario, temChecklist, temRevisao, modoRevisao, documentosPadrao }));
+    const etapas = planoDiretor.etapas.map(({ ordem, nome, temInformacoesProjeto, temFormulario, temChecklist, temRevisao, modoRevisao, documentosPadrao, perfisQueConduzem }) => ({ ordem, nome, temInformacoesProjeto, temFormulario, temChecklist, temRevisao, modoRevisao, documentosPadrao, perfisQueConduzem }));
     await prisma.tipoProjetoModelo.upsert({
       where: { chave: "PLANO_DIRETOR_CLEVELANDIA" },
       update: { nome: "Plano Diretor — Clevelândia", municipioId: CLEVELANDIA, etapas: { deleteMany: {}, create: etapas } },

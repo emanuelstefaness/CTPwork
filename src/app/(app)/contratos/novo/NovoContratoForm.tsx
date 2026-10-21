@@ -95,7 +95,7 @@ export default function NovoContratoForm({
           ))}
         </ol>
         {podeConfigurar && (
-          <Link href="/cadastros?aba=fluxos-contrato" className="mt-4 inline-block text-xs font-semibold text-cyan-700 hover:underline">Configurar tipos de contrato →</Link>
+          <Link href="/cadastros/tipos-de-contrato" className="mt-4 inline-block text-xs font-semibold text-cyan-700 hover:underline">Configurar tipos de contrato →</Link>
         )}
       </aside>
     </div>

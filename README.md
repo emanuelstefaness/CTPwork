@@ -156,27 +156,60 @@ existindo para o assunto da etapa.
   na hora as sessões abertas (`User.sessaoVersao`, conferida no banco a cada requisição).
 - **Senhas**: mínimo de 8 caracteres com letras e números, máximo de 72 (limite do bcrypt), hash
   bcrypt custo 12 (`src/lib/senha.ts`).
-- **Desativar acesso** (Cadastros › Usuários, só gestor): a pessoa não entra mais e é desconectada
+- **Desativar acesso** (Cadastros › Equipe do CTP ou a página da prefeitura, só gestor): a pessoa não entra mais e é desconectada
   no próximo clique; sai das listas de escolha e dos avisos, mas o histórico (comentários,
   assinaturas, mensagens, auditoria) fica. Reativável. Ninguém desativa a si mesmo nem o último gestor.
 
-## Prefeituras: assistente e fluxos exclusivos
+## Cadastros
 
-- **Cadastros › Municípios › Nova prefeitura (assistente)**: numa tela só cadastra o município, as
-  pessoas da prefeitura (cada uma com seu perfil) e, se quiser, um tipo de contrato e um tipo de
-  projeto **exclusivos**, copiados de um existente para ajustar depois. O gestor define o **e-mail
-  e a senha** de cada pessoa (botão "Gerar" cria uma senha forte) e repassa; cada uma só enxerga
-  o que é daquela prefeitura e pode trocar a senha em Minha conta.
-- **Fluxos exclusivos**: todo tipo de contrato e de projeto tem "Disponível para: todas as
+Menu agrupado pelo que o gestor quer resolver (`src/app/(app)/cadastros`):
+
+| Grupo | Seção | O que tem |
+|---|---|---|
+| Pessoas | Equipe do CTP | Pessoas do CTP, busca, filtro por setor, setores, nova pessoa, editar, desativar |
+| Pessoas | Perfis de acesso | Cargos e o que cada um pode fazer (contagem pelo perfil que vale no login) |
+| Clientes | Prefeituras | Lista com busca; cada prefeitura tem a própria página: dados, acessos e tipos exclusivos |
+| Como o trabalho anda | Tipos de contrato | Etapas, quem conclui cada uma, o que acontece nela e documentos pedidos |
+| Como o trabalho anda | Tipos de projeto | Etapas, o que acontece em cada uma e quem do CTP a conduz |
+| Como o trabalho anda | Formulários | Modelos de memorando e o formulário das etapas de projeto (um só) |
+
+Formulários só aparecem quando chamados ("Nova pessoa", "Novo acesso", "Editar"…). Endereços
+antigos (`/cadastros?aba=…`, `/cadastros/nova-prefeitura`) levam à seção nova equivalente.
+
+### Quem faz cada etapa
+
+Cada etapa é configurada respondendo a perguntas, e a lista resume em uma frase:
+
+- **Etapa de contrato — "Quem conclui esta etapa?"**: a *equipe do CTP* (qualquer pessoa que
+  gerencia contratos, ou só alguns perfis) ou *a prefeitura* (aprova, ou devolve à etapa anterior
+  com o motivo). "O que acontece nesta etapa?": coleta de assinaturas, libera o projeto técnico.
+  Documentos em duas listas: os que a prefeitura envia e os que o CTP envia.
+- **Etapa de projeto — "O que acontece nesta etapa?"**: dados do projeto e cronograma, formulário
+  para a prefeitura, revisão de minuta, documentos pedidos à prefeitura. **"Quem conduz esta etapa
+  no CTP?"**: qualquer pessoa que conduz etapas (perfil com "Gerenciar etapas de projeto" ou
+  adicionada ao projeto para editar) ou só alguns perfis (`perfisQueConduzem`, copiado para cada
+  projeto). Conduzir = iniciar, pedir ação da prefeitura, prazo, pedir e aprovar documentos,
+  concluir; quem não pode vê o aviso "Esta etapa é conduzida por: …". Regra em
+  `src/lib/conduzir-etapa.ts`, conferida no servidor em todas as ações da etapa.
+
+## Prefeituras: assistente e tipos exclusivos
+
+- **Cadastros › Prefeituras › Nova prefeitura** (a única forma de cadastrar uma): numa tela só
+  cadastra o município, as pessoas da prefeitura (cada uma com seu perfil) e, se quiser, um tipo de
+  contrato e um tipo de projeto **exclusivos**, copiados de um existente para ajustar depois. O
+  gestor define o **e-mail e a senha inicial** de cada pessoa (botão "Gerar" cria uma senha forte) e
+  repassa; cada uma só enxerga o que é daquela prefeitura e cria a própria senha no primeiro acesso.
+  Depois, novos acessos são criados na página da prefeitura.
+- **Tipos exclusivos**: todo tipo de contrato e de projeto tem "Disponível para: todas as
   prefeituras / só a Prefeitura X". Ao criar um contrato, aparecem os tipos gerais mais os
   exclusivos da prefeitura escolhida (o exclusivo já vem sugerido); o servidor recusa usar o
   exclusivo de outra.
 - **Senhas**: mínimo de 8 caracteres, no assistente e no cadastro avulso. O gestor troca a senha de
-  alguém em Cadastros › Usuários › Editar › "Nova senha".
+  alguém em Editar › "Nova senha" (na Equipe do CTP ou na página da prefeitura).
 
 ## Perfis e permissões
 
-Em **Cadastros › Perfis e permissões** o gestor cria perfis (cargos) — ex.: Jurídico, Financeiro,
+Em **Cadastros › Perfis de acesso** o gestor cria perfis (cargos) — ex.: Jurídico, Financeiro,
 Prefeito, Secretário — e marca o que cada um pode fazer. Cada usuário tem um perfil (escolhido no
 cadastro). O catálogo fica em `src/lib/permissoes.ts`:
 
@@ -186,9 +219,9 @@ cadastro). O catálogo fica em `src/lib/permissoes.ts`:
 | Prefeitura | Revisar minutas (grifar/comentar/sugerir) · Dar o parecer da minuta · Assinar contratos pelo município · Enviar documentos e formulários |
 
 - **"Vê só os contratos e projetos em que participa"** (perfis do CTP): onde a pessoa é responsável,
-  responsável por alguma etapa ou signatária — vale para listas, detalhes, prazos, Word/PDF e anexos
-  (`src/lib/visibilidade.ts`).
-- Nas **etapas de contrato**, dá para restringir quais perfis podem concluí-la.
+  responsável por alguma etapa, signatária ou adicionada ao projeto — vale para listas, detalhes,
+  prazos, Word/PDF e anexos (`src/lib/visibilidade.ts`).
+- Nas **etapas de contrato** e de **projeto**, dá para reservar a etapa a alguns perfis (ver "Quem faz cada etapa").
 - Perfis de fábrica (Gestor, Colaborador, Município) reproduzem o comportamento anterior; podem ser
   editados, não excluídos. Mudanças valem no próximo clique (a sessão lê o perfil do banco a cada request).
 - Regras fixas: a prefeitura só vê o próprio município; o sistema nunca fica sem alguém com acesso
@@ -212,12 +245,12 @@ etapas. Regras em `src/lib/membros-projeto.ts`; visibilidade em `src/lib/visibil
 
 ## Fluxos de contrato (tipos de contrato)
 
-Em **Cadastros › Fluxos de contrato** o gestor cria tipos de contrato (ex.: Padrão, Dispensa de
+Em **Cadastros › Tipos de contrato** o gestor cria tipos de contrato (ex.: Padrão, Dispensa de
 licitação, Termo aditivo), cada um com as próprias etapas, na ordem:
 
-- **Exige assinaturas** (no máximo uma por tipo): ali se abre a coleta de assinaturas, e o contrato
-  só avança com todas coletadas.
-- **Libera o projeto**: a partir dessa etapa dá para criar o projeto técnico (um tipo sem ela não
+- **Coleta de assinaturas** (no máximo uma por tipo, sempre concluída pelo CTP): ali se abre a coleta
+  de assinaturas, e o contrato só avança com todas coletadas.
+- **Libera o projeto técnico**: a partir dessa etapa dá para criar o projeto (um tipo sem ela não
   gera projeto — útil para aditivos).
 - A última etapa é o estado final ("concluído").
 
@@ -237,7 +270,7 @@ função seguem o tipo **Padrão** (as 6 etapas originais). Lógica comum em `sr
 - **Etapa concluída pela prefeitura** (`concluidaPelaPrefeitura`): quem decide é a prefeitura (permissão
   "Aprovar etapas do contrato"), não o CTP. No Padrão, a aprovação do orçamento: o prefeito vê o orçamento e
   aprova, ou pede revisão com motivo — o contrato volta à emissão e o orçamento volta a ser pedido.
-- Em Cadastros › Fluxos de contrato, "aplicar aos contratos em andamento" leva a regra e os documentos que
+- Em Cadastros › Tipos de contrato, "aplicar aos contratos em andamento" leva a regra e os documentos que
   faltarem às etapas ainda não concluídas. Cada contrato mostra o "Próximo passo" de quem está vendo.
 
 ## Segurança HTTP
@@ -305,7 +338,7 @@ Nenhuma etapa de modelo fica sem função: Cadastros marca "Sem função — só
 Cada etapa carrega capacidades persistidas (`temInformacoesProjeto`, `temFormulario`, `temChecklist`, `temRevisao` em `EtapaProjeto`), não inferidas pelo nome — evita que uma etapa como "Fase 02" perca a revisão só por não ter "minuta" no nome. "Informações iniciais" é a etapa que mostra os dados do projeto (código/contratante/vigência, herdados do contrato) e o cronograma de atividades.
 
 - **Documentos pedidos por padrão** (`EtapaModelo.documentosPadrao`): com checklist ligado, a etapa do modelo lista documentos que entram no checklist de todo projeto novo.
-- **Aplicar aos projetos em andamento**: ao salvar uma etapa do modelo, as etapas **ainda não iniciadas** dos projetos desse tipo (achadas pelo nome anterior) recebem nome, funções e os documentos padrão que faltarem. Etapas iniciadas ou concluídas não mudam.
+- **Aplicar aos projetos em andamento**: ao salvar uma etapa do modelo, as etapas **ainda não iniciadas** dos projetos desse tipo (achadas pelo nome anterior) recebem nome, funções, quem conduz e os documentos padrão que faltarem. Etapas iniciadas ou concluídas não mudam.
 
 ## Decisões e simplificações assumidas
 

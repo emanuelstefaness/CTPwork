@@ -8,21 +8,22 @@ const FASE = "Fase 04 — Audiência pública";
 
 test("documento padrão novo no modelo chega às etapas não iniciadas, sem duplicar os que já existem", async ({ page }) => {
   await entrar(page, CTP.ana);
-  await page.goto("/cadastros?aba=fluxos");
-  await page.getByRole("link", { name: /^Plano Diretor\s*\d+$/ }).click();
-  await expect(page.getByRole("heading", { name: "Fluxo de etapas — Plano Diretor" })).toBeVisible();
+  await page.goto("/cadastros/tipos-de-projeto");
+  await page.getByRole("link", { name: /^Plano Diretor\s*\d+ etapas/ }).click();
+  await expect(page.getByRole("heading", { name: "Plano Diretor", exact: true })).toBeVisible();
 
-  const linha = page.getByText(FASE, { exact: true }).locator("..");
-  await expect(linha).toContainText("Checklist · 3 doc. padrão");
+  const linha = page.locator(`[data-etapa="${FASE}"]`);
+  await expect(linha).toContainText("3 documentos pedidos");
   await linha.getByRole("button", { name: "Editar etapa" }).click();
 
-  const form = page.locator("form", { has: page.locator("input[name=etapaModeloId]") });
-  const documentos = form.locator("textarea[name=documentosPadrao]");
-  await expect(documentos).toHaveValue(/Ata da audiência pública/);
-  await documentos.fill(`${await documentos.inputValue()}\nRelatório fotográfico`);
+  const form = linha.locator("form");
+  await expect(form.getByText("Ata da audiência pública")).toBeVisible();
+  await form.getByLabel("Documento pedido à prefeitura").fill("Relatório fotográfico");
+  await form.getByLabel("Documento pedido à prefeitura").press("Enter");
+  await expect(form.getByText("Relatório fotográfico")).toBeVisible();
   await expect(form.locator("input[name=aplicarAosProjetos]")).toBeChecked();
-  await form.getByRole("button", { name: "Salvar" }).click();
-  await expect(page.getByText(FASE, { exact: true }).locator("..")).toContainText("Checklist · 4 doc. padrão");
+  await form.getByRole("button", { name: "Salvar etapa" }).click();
+  await expect(linha).toContainText("4 documentos pedidos");
 
   // O projeto de Guarapuava ainda não iniciou a Fase 04: recebe só o documento novo.
   await page.goto("/projetos/projeto-demo-plano-diretor?etapa=etapa-pd-fase4-demo");
@@ -34,10 +35,10 @@ test("documento padrão novo no modelo chega às etapas não iniciadas, sem dupl
 
 test("nenhuma etapa do modelo fica sem função", async ({ page }) => {
   await entrar(page, CTP.ana);
-  await page.goto("/cadastros?aba=fluxos");
-  for (const tipo of [/^Estatuto e PCCS\s*\d+$/, /^Plano Diretor\s*\d+$/, /^Personalizado\s*\d+$/]) {
-    await page.getByRole("link", { name: tipo }).click();
-    await expect(page.getByRole("heading", { name: /^Fluxo de etapas/ })).toBeVisible();
+  await page.goto("/cadastros/tipos-de-projeto");
+  for (const tipo of ["Estatuto e PCCS", "Plano Diretor", "Personalizado"]) {
+    await page.getByRole("link", { name: new RegExp(`^${tipo}\\s*\\d+ etapas`) }).click();
+    await expect(page.getByRole("heading", { name: tipo, exact: true })).toBeVisible();
     await expect(page.getByText("Sem função — só chat")).toHaveCount(0);
   }
 });

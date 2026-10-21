@@ -13,12 +13,12 @@ export type TipoPerfil = "INTERNO" | "EXTERNO";
 export const PERMISSOES = {
   // ── Equipe do CTP ──
   painel: { tipo: "INTERNO", grupo: "Geral", rotulo: "Ver o dashboard", descricao: "Números, gráficos e atividades de toda a empresa." },
-  "contrato.gerenciar": { tipo: "INTERNO", grupo: "Contratos", rotulo: "Gerenciar contratos", descricao: "Criar contratos, avançar etapas, abrir a coleta de assinaturas e criar o projeto." },
-  "projeto.gerenciar": { tipo: "INTERNO", grupo: "Projetos", rotulo: "Gerenciar etapas de projeto", descricao: "Status e prazo das etapas, cronograma, checklist e concluir revisões." },
+  "contrato.gerenciar": { tipo: "INTERNO", grupo: "Contratos", rotulo: "Gerenciar contratos", descricao: "Criar contratos, concluir etapas, abrir a coleta de assinaturas, criar o projeto e adicionar pessoas a ele. Cada tipo de contrato pode reservar etapas a alguns perfis." },
+  "projeto.gerenciar": { tipo: "INTERNO", grupo: "Projetos", rotulo: "Gerenciar etapas de projeto", descricao: "Conduzir as etapas (status, prazo, documentos pedidos, concluir revisões) e o cronograma. Cada tipo de projeto pode reservar etapas a alguns perfis." },
   "projeto.reabrir": { tipo: "INTERNO", grupo: "Projetos", rotulo: "Reabrir etapas concluídas", descricao: "Com motivo registrado na auditoria." },
   "minuta.escrever": { tipo: "INTERNO", grupo: "Minutas", rotulo: "Escrever minutas", descricao: "Editar o rascunho, importar Word, enviar versões ao município e aceitar ou recusar sugestões de redação." },
   "memorando.gerenciar": { tipo: "INTERNO", grupo: "Memorandos", rotulo: "Cancelar memorandos de outras pessoas", descricao: "Quem criou o memorando sempre pode cancelá-lo." },
-  cadastros: { tipo: "INTERNO", grupo: "Administração", rotulo: "Acessar Cadastros", descricao: "Usuários, perfis, municípios, setores, modelos de formulário e fluxos." },
+  cadastros: { tipo: "INTERNO", grupo: "Administração", rotulo: "Acessar Cadastros", descricao: "Equipe do CTP, perfis, prefeituras e seus acessos, tipos de contrato e de projeto e formulários." },
   // ── Prefeitura ──
   "minuta.revisar": { tipo: "EXTERNO", grupo: "Minutas", rotulo: "Revisar minutas", descricao: "Grifar, comentar, concordar, discordar e sugerir redação." },
   "minuta.parecer": { tipo: "EXTERNO", grupo: "Minutas", rotulo: "Dar o parecer da minuta", descricao: "Aprovar a versão ou pedir ajustes ao CTP." },
@@ -40,6 +40,11 @@ export const PERFIL_MUNICIPIO = "perfil-municipio";
 export function perfilPadrao(user: { tipo: string; perfilInterno?: string | null }) {
   if (user.tipo === "EXTERNO") return PERFIL_MUNICIPIO;
   return user.perfilInterno === "GESTOR" ? PERFIL_GESTOR : PERFIL_COLABORADOR;
+}
+
+/** Perfil que vale para a pessoa (como no login): o gravado, se for do tipo dela; senão, o de fábrica. */
+export function perfilEfetivoId(user: { tipo: string; perfilInterno?: string | null; perfilId: string | null }, perfis: readonly { id: string; tipo: string }[]) {
+  return user.perfilId && perfis.some((p) => p.id === user.perfilId && p.tipo === user.tipo) ? user.perfilId : perfilPadrao(user);
 }
 
 /** Lê a lista de permissões gravada no perfil, ignorando chaves que não valem para o tipo. */

@@ -14,7 +14,7 @@ import { criarEventoCronograma, removerEventoCronograma } from "./cronograma";
 import {
   alterarAcessoUsuario, criarPrefeitura, alternarFluxoContrato, atualizarPerfil, criarPerfil, excluirPerfil, atualizarEtapaFluxoContrato, atualizarFluxoContrato, criarEtapaFluxoContrato,
   criarFluxoContrato, moverEtapaFluxoContrato, removerEtapaFluxoContrato, atualizarEtapaModelo, atualizarModeloFormulario, atualizarMunicipio, atualizarUsuario, criarEtapaModelo,
-  criarModeloFormulario, criarMunicipio, criarSetor, criarTipoProjeto, criarUsuario, renomearSetor, renomearTipoProjeto,
+  criarModeloFormulario, criarSetor, criarTipoProjeto, criarUsuario, moverEtapaModelo, removerEtapaModelo, renomearSetor, renomearTipoProjeto,
 } from "./cadastros";
 
 /**
@@ -59,6 +59,14 @@ export async function criarEtapaModeloSeguro(formData: FormData): R {
 
 export async function atualizarEtapaModeloSeguro(formData: FormData): R {
   return capturar(() => atualizarEtapaModelo(formData));
+}
+
+export async function removerEtapaModeloSeguro(formData: FormData): R {
+  return capturar(() => removerEtapaModelo(campo(formData, "etapaId")));
+}
+
+export async function moverEtapaModeloSeguro(formData: FormData): R {
+  return capturar(() => moverEtapaModelo(campo(formData, "etapaId"), campo(formData, "direcao") === "up" ? "up" : "down"));
 }
 
 const campo = (formData: FormData, nome: string) => String(formData.get(nome) ?? "");
@@ -179,10 +187,6 @@ export async function criarSetorSeguro(formData: FormData): R {
 
 export async function renomearSetorSeguro(formData: FormData): R {
   return capturar(() => renomearSetor(formData));
-}
-
-export async function criarMunicipioSeguro(formData: FormData): R {
-  return capturar(() => criarMunicipio(formData));
 }
 
 export async function atualizarMunicipioSeguro(formData: FormData): R {

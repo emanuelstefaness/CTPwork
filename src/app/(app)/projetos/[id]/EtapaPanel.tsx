@@ -2,6 +2,8 @@ import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/tenant";
 import { pode } from "@/lib/permissoes";
 import { permissoesNoProjeto } from "@/lib/membros-projeto";
+import { conduzEtapa, nomesDosPerfis } from "@/lib/conduzir-etapa";
+import { lerIds } from "@/lib/permissoes";
 import { STATUS_ETAPA_LABEL } from "@/lib/constants";
 import {
   aprovarItemChecklistSeguro, avancarStatusEtapaSeguro, concluirEtapaComRevisaoSeguro, criarEventoCronogramaSeguro,
@@ -28,7 +30,8 @@ export default async function EtapaPanel({ etapaId, projeto }: { etapaId: string
   const isInterno = user.tipo === "INTERNO";
   // O que a pessoa pode neste projeto: o perfil (Cadastros › Perfis) + participação "Editar".
   const permissoes = await permissoesNoProjeto(user, projeto.id);
-  const gerencia = permissoes.includes("projeto.gerenciar");
+  // Cronograma é do projeto; a etapa pode ser reservada a alguns perfis (Cadastros › Tipos de projeto).
+  const gerenciaProjeto = permissoes.includes("projeto.gerenciar");
   const reabre = pode(user, "projeto.reabrir");
   const enviaDocumentos = pode(user, "etapa.enviar");
   const etapa = await prisma.etapaProjeto.findUniqueOrThrow({
@@ -54,7 +57,9 @@ export default async function EtapaPanel({ etapaId, projeto }: { etapaId: string
       projeto: { include: { contratante: true, contratoOrigem: true, eventosCronograma: { orderBy: { data: "asc" } } } },
     },
   });
-  const modelo = etapa.temFormulario ? await prisma.modeloFormulario.findFirst({ where: { tipo: "CONTRATO" } }) : null;
+  const gerencia = conduzEtapa(user, permissoes, etapa);
+  const reservadaPara = gerenciaProjeto && !gerencia ? await nomesDosPerfis(lerIds(etapa.perfisQueConduzem)) : [];
+  const modelo = etapa.temFormulario ? await prisma.modeloFormulario.findFirst({ where: { tipo: "CONTRATO" }, orderBy: { createdAt: "asc" } }) : null;
   const respostas = etapa.respostaFormulario ? JSON.parse(etapa.respostaFormulario.respostas) as Record<string, string> : null;
   const aprovadosChecklist = etapa.checklistItens.filter((item) => item.status === "APROVADO").length;
   const checklistProgress = etapa.checklistItens.length ? Math.round((aprovadosChecklist / etapa.checklistItens.length) * 100) : 0;
@@ -156,6 +161,13 @@ export default async function EtapaPanel({ etapaId, projeto }: { etapaId: string
           </div>
         )}
       </div>
+
+      {reservadaPara.length > 0 && (
+        <p className="mt-4 flex items-start gap-2 rounded-xl bg-slate-50 px-3.5 py-2.5 text-sm text-slate-600">
+          <UserIcon className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
+          <span>Esta etapa é conduzida por: <strong className="font-semibold text-slate-800">{reservadaPara.join(", ")}</strong>. Você acompanha, mas não mexe nela.</span>
+        </p>
+      )}
 
       {passo && (
         <p className="mt-4 flex items-start gap-2 rounded-xl bg-cyan-50 px-3.5 py-2.5 text-sm text-cyan-900">
@@ -267,11 +279,11 @@ export default async function EtapaPanel({ etapaId, projeto }: { etapaId: string
     <Panel title="Cronograma do projeto" description="Reuniões, oficinas e entregas combinadas com o município, do projeto inteiro.">
       <div className="px-5 py-4">
         <ol className="space-y-5">
-          {etapa.projeto.eventosCronograma.map((event) => <li key={event.id} className="relative flex gap-3"><span className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full bg-cyan-500 ring-4 ring-cyan-50" /><div className="min-w-0 flex-1"><p className="text-sm font-semibold text-slate-800">{event.titulo}</p><p className="mt-0.5 text-xs text-slate-400">{formatarData(event.data)} · {event.responsavelNome}</p>{event.descricao && <p className="mt-1 text-xs leading-5 text-slate-500">{event.descricao}</p>}</div>{gerencia && <FormSeguro acao={removerEventoCronogramaSeguro}><input type="hidden" name="eventoId" value={event.id} /><button className="text-[11px] text-slate-400 hover:text-red-600">remover</button></FormSeguro>}</li>)}
+          {etapa.projeto.eventosCronograma.map((event) => <li key={event.id} className="relative flex gap-3"><span className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full bg-cyan-500 ring-4 ring-cyan-50" /><div className="min-w-0 flex-1"><p className="text-sm font-semibold text-slate-800">{event.titulo}</p><p className="mt-0.5 text-xs text-slate-400">{formatarData(event.data)} · {event.responsavelNome}</p>{event.descricao && <p className="mt-1 text-xs leading-5 text-slate-500">{event.descricao}</p>}</div>{gerenciaProjeto && <FormSeguro acao={removerEventoCronogramaSeguro}><input type="hidden" name="eventoId" value={event.id} /><button className="text-[11px] text-slate-400 hover:text-red-600">remover</button></FormSeguro>}</li>)}
           {etapa.projeto.eventosCronograma.length === 0 && <p className="py-8 text-center text-xs text-slate-400">Nenhum evento cadastrado.</p>}
         </ol>
       </div>
-      {gerencia && (
+      {gerenciaProjeto && (
         <FormSeguro acao={criarEventoCronogramaSeguro} className="space-y-2 border-t border-slate-100 bg-slate-50/70 p-4">
           <input type="hidden" name="projetoId" value={projeto.id} />
           <p className="text-xs font-semibold text-slate-600">Adicionar evento</p>

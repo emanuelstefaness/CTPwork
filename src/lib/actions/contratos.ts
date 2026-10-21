@@ -44,7 +44,7 @@ export async function criarContrato(formData: FormData) {
   const fluxo = await prisma.fluxoContrato.findUnique({ where: { id: fluxoId }, include: { etapas: { orderBy: { ordem: "asc" } } } });
   if (!fluxo || !fluxo.ativo) throw new Error("Escolha um tipo de contrato ativo.");
   if (fluxo.municipioId && fluxo.municipioId !== contratanteId) throw new Error(`O tipo "${fluxo.nome}" é exclusivo de outra prefeitura.`);
-  if (fluxo.etapas.length < 2) throw new Error(`O tipo "${fluxo.nome}" precisa de pelo menos 2 etapas. Complete-o em Cadastros › Fluxos de contrato.`);
+  if (fluxo.etapas.length < 2) throw new Error(`O tipo "${fluxo.nome}" precisa de pelo menos 2 etapas. Complete-o em Cadastros › Tipos de contrato.`);
 
   const contrato = await comCodigoUnico(gerarCodigoContrato, (codigo) => prisma.contrato.create({
     data: {
@@ -70,7 +70,7 @@ export async function criarContrato(formData: FormData) {
     },
   }));
 
-  // Documentos que o tipo de contrato pede em cada etapa (Cadastros › Fluxos de contrato).
+  // Documentos que o tipo de contrato pede em cada etapa (Cadastros › Tipos de contrato).
   await pedirDocumentosPadrao(contrato.id, fluxo.etapas);
 
   await registrarAuditoria({ userId: user.id, acao: "CRIAR", entidadeTipo: "Contrato", entidadeId: contrato.id, detalhe: fluxo.nome });
@@ -99,7 +99,7 @@ export async function avancarEtapaContrato(contratoId: string) {
   const { contrato, atual, proxima } = await contratoComEtapas(contratoId);
   if (!proxima) throw new Error("O contrato já está na última etapa do fluxo.");
   if (atual.concluidaPelaPrefeitura) throw new AcessoNegadoError(`A etapa "${atual.nome}" é concluída pela prefeitura.`);
-  // A etapa pode estar restrita a alguns perfis (Cadastros › Fluxos de contrato).
+  // A etapa pode estar restrita a alguns perfis (Cadastros › Tipos de contrato).
   if (!podeAvancarEtapa(user, atual)) {
     throw new AcessoNegadoError(`Seu perfil (${user.perfilNome}) não pode concluir a etapa "${atual.nome}".`);
   }
@@ -290,7 +290,7 @@ export async function criarProjetoDoContrato(formData: FormData) {
   const sequenciaNoContrato = (await prisma.projeto.count({ where: { contratoOrigemId: contratoId } })) + 1;
   const codigo = gerarCodigoProjeto(contrato.codigo, sequenciaNoContrato);
 
-  // Fluxo de etapas vem do modelo configurável (/cadastros?aba=fluxos), não mais fixo no código —
+  // Fluxo de etapas vem do modelo configurável (Cadastros › Tipos de projeto), não mais fixo no código —
   // isso é o que dá autonomia para criar tipos de projeto novos (ex.: "Plano de Mobilidade") sem
   // depender de alteração de código.
   const tipoModelo = await prisma.tipoProjetoModelo.findUnique({
@@ -301,7 +301,7 @@ export async function criarProjetoDoContrato(formData: FormData) {
     throw new Error(`O tipo de projeto "${tipoModelo.nome}" é exclusivo de outra prefeitura.`);
   }
   if (!tipoModelo || tipoModelo.etapas.length === 0) {
-    throw new Error('Este tipo de projeto ainda não tem um fluxo de etapas configurado em "Cadastros › Fluxos de projeto".');
+    throw new Error('Este tipo de projeto ainda não tem etapas. Configure em "Cadastros › Tipos de projeto".');
   }
 
   const projeto = await prisma.projeto.create({
@@ -324,13 +324,14 @@ export async function criarProjetoDoContrato(formData: FormData) {
           temFormulario: etapa.temFormulario,
           temChecklist: etapa.temChecklist,
           temRevisao: etapa.temRevisao,
+          perfisQueConduzem: etapa.perfisQueConduzem,
         })),
       },
     },
     include: { etapas: true },
   });
 
-  // Documentos que o modelo pede por padrão em cada etapa (Cadastros › Fluxos de projeto).
+  // Documentos que o modelo pede por padrão em cada etapa (Cadastros › Tipos de projeto).
   const pedidos = tipoModelo.etapas.flatMap((modelo, i) => {
     const etapa = projeto.etapas.find((e) => e.ordem === i);
     return etapa && modelo.temChecklist ? lerDocumentosPadrao(modelo.documentosPadrao).map((nome) => ({ etapaId: etapa.id, nome })) : [];

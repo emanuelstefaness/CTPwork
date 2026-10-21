@@ -53,7 +53,7 @@ test.describe("Cabeçalhos de segurança", () => {
 test.describe("Desativar acesso de usuário", () => {
   test.describe.configure({ mode: "serial" });
 
-  const linhaDe = (page: Page, email: string) => page.locator("div.divide-y > div").filter({ hasText: email });
+  const linhaDe = (page: Page, email: string) => page.locator(`[data-pessoa="${email}"]`);
 
   test("gestor desativa: a pessoa é desconectada na hora e não entra mais; reativada, volta a entrar", async ({ page, browser }) => {
     // Ricardo (Pato Branco) está usando o sistema numa outra janela.
@@ -65,7 +65,7 @@ test.describe("Desativar acesso de usuário", () => {
 
     // Ana, gestora, desativa o acesso dele.
     await entrar(page, CTP.ana);
-    await page.goto("/cadastros?aba=usuarios");
+    await page.goto("/cadastros/prefeituras/municipio-pato-branco");
     page.once("dialog", (d) => d.accept());
     await linhaDe(page, MUNICIPIO.ricardo).getByRole("button", { name: "Desativar acesso" }).click();
     await expect(linhaDe(page, MUNICIPIO.ricardo).getByText(/Desativado/)).toBeVisible();
@@ -90,14 +90,14 @@ test.describe("Desativar acesso de usuário", () => {
 
   test("gestor não vê o botão para desativar a si mesmo", async ({ page }) => {
     await entrar(page, CTP.ana);
-    await page.goto("/cadastros?aba=usuarios");
+    await page.goto("/cadastros/equipe");
     await expect(linhaDe(page, CTP.ana).getByRole("button", { name: "Desativar acesso" })).toHaveCount(0);
     await expect(linhaDe(page, CTP.bruno).getByRole("button", { name: "Desativar acesso" })).toBeVisible();
   });
 
   test("usuário desativado some das listas de escolha (ex.: responsável por um contrato novo)", async ({ page }) => {
     await entrar(page, CTP.ana);
-    await page.goto("/cadastros?aba=usuarios");
+    await page.goto("/cadastros/equipe");
     page.once("dialog", (d) => d.accept());
     await linhaDe(page, CTP.bruno).getByRole("button", { name: "Desativar acesso" }).click();
     await expect(linhaDe(page, CTP.bruno).getByRole("button", { name: "Reativar acesso" })).toBeVisible();
@@ -106,7 +106,7 @@ test.describe("Desativar acesso de usuário", () => {
     await expect(page.locator("select[name=responsavelId] option", { hasText: "Bruno" })).toHaveCount(0);
 
     // Devolve o acesso: outros testes usam o Bruno.
-    await page.goto("/cadastros?aba=usuarios");
+    await page.goto("/cadastros/equipe");
     await linhaDe(page, CTP.bruno).getByRole("button", { name: "Reativar acesso" }).click();
     await expect(linhaDe(page, CTP.bruno).getByRole("button", { name: "Desativar acesso" })).toBeVisible();
   });

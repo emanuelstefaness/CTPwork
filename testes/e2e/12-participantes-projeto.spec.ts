@@ -16,7 +16,7 @@ const pessoas = (page: Page) => page.locator("section", { has: page.getByRole("h
 
 test("perfil sem permissões que só vê onde participa: o consultor não enxerga o projeto", async ({ page }) => {
   await entrar(page, CTP.ana);
-  await page.goto("/cadastros?aba=perfis");
+  await page.goto("/cadastros/perfis?novo=1");
   const criar = page.locator("form", { hasText: "Criar perfil" });
   await criar.getByLabel("Nome").fill("Consultor");
   await criar.getByLabel("Para quem").selectOption({ label: "Equipe do CTP" });
@@ -28,15 +28,15 @@ test("perfil sem permissões que só vê onde participa: o consultor não enxerg
   await page.getByRole("button", { name: "Salvar perfil" }).click();
   await expect(page.getByLabel(/Vê só os contratos e projetos em que participa/)).toBeChecked();
 
-  await page.goto("/cadastros?aba=usuarios");
-  const novo = page.locator("form", { hasText: "Criar usuário" });
+  await page.goto("/cadastros/equipe?nova=1");
+  const novo = page.locator("form", { hasText: "Cadastrar pessoa" });
   await novo.locator("input[name=nome]").fill(RUI.nome);
   await novo.locator("input[name=email]").fill(RUI.email);
   await novo.locator("input[name=senha]").fill(SENHA);
   await novo.getByLabel("Setor").selectOption({ index: 1 });
-  await novo.getByLabel("Perfil").selectOption({ label: "Consultor" });
-  await novo.getByRole("button", { name: "Criar usuário" }).click();
-  await expect(page.locator("div.divide-y > div").filter({ hasText: RUI.email })).toContainText("Consultor");
+  await novo.getByLabel("Perfil de acesso").selectOption({ label: "Consultor" });
+  await novo.getByRole("button", { name: "Cadastrar pessoa" }).click();
+  await expect(page.locator(`[data-pessoa="${RUI.email}"]`)).toContainText("Consultor");
 
   await entrar(page, RUI.email);
   await criarPropriaSenha(page, RUI.email, SENHA, RUI.senha);

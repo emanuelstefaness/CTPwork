@@ -14,8 +14,8 @@ const SECRETARIA = { nome: "Beatriz Secretária", email: "beatriz@clevelandia.pr
 
 test("assistente cadastra a prefeitura, os acessos com senha e os fluxos exclusivos de uma vez", async ({ page }) => {
   await entrar(page, CTP.ana);
-  await page.goto("/cadastros?aba=municipios");
-  await page.getByRole("link", { name: "Nova prefeitura (assistente)" }).click();
+  await page.goto("/cadastros/prefeituras");
+  await page.getByRole("link", { name: "Nova prefeitura" }).click();
   await expect(page.getByRole("heading", { name: "Nova prefeitura" })).toBeVisible();
 
   await page.getByLabel("Nome", { exact: true }).fill(PREFEITURA);
@@ -43,6 +43,9 @@ test("assistente cadastra a prefeitura, os acessos com senha e os fluxos exclusi
   await expect(resumo).toContainText(`Acesso criado para ${SECRETARIA.nome} — login: ${SECRETARIA.email}`);
   await expect(resumo).toContainText("Tipo de contrato exclusivo: Padrão — Clevelândia");
   await expect(resumo).toContainText("Tipo de projeto exclusivo:");
+  // Depois do assistente, a página da prefeitura já mostra os acessos.
+  await expect(page.getByRole("heading", { name: PREFEITURA })).toBeVisible();
+  await expect(page.locator(`[data-pessoa="${PREFEITO.email}"]`)).toContainText("Município");
 });
 
 test("no primeiro acesso o prefeito cria a própria senha e depois vê só a própria prefeitura", async ({ page }) => {
@@ -94,25 +97,26 @@ test("tipo de contrato exclusivo só aparece para a própria prefeitura", async 
   await expect(page.getByText("Revisão do Plano Diretor de Clevelândia")).toBeVisible();
 });
 
-test("cadastro avulso exige senha, e o gestor pode trocar a senha depois", async ({ page }) => {
+test("novo acesso na página da prefeitura exige senha, e o gestor pode trocar a senha depois", async ({ page }) => {
   await entrar(page, CTP.ana);
-  await page.goto("/cadastros?aba=usuarios");
-  const novo = page.locator("form", { hasText: "Criar usuário" });
+  await page.goto("/cadastros/prefeituras");
+  await page.getByRole("link", { name: new RegExp(PREFEITURA) }).click();
+  await page.getByRole("link", { name: "Novo acesso" }).click();
+  const novo = page.locator("form", { hasText: "Criar acesso" });
   await novo.locator("input[name=nome]").fill("Otávio Fiscal");
   await novo.locator("input[name=email]").fill("otavio@clevelandia.pr.gov.br");
+  await novo.getByRole("button", { name: "Criar acesso" }).click();
+  await expect(page.locator('[data-pessoa="otavio@clevelandia.pr.gov.br"]')).toHaveCount(0); // sem senha, o navegador nem envia
   await novo.locator("input[name=senha]").fill("Fiscal2026");
-  await novo.getByText("Usuário do município").click();
-  await novo.locator("select[name=municipioId]").selectOption({ label: PREFEITURA });
-  await novo.getByRole("button", { name: "Criar usuário" }).click();
-  const linha = page.locator("div.divide-y > div").filter({ hasText: "otavio@clevelandia.pr.gov.br" });
+  await novo.getByRole("button", { name: "Criar acesso" }).click();
+  const linha = page.locator('[data-pessoa="otavio@clevelandia.pr.gov.br"]');
   await expect(linha).toBeVisible();
 
   // Troca a senha pelo "Editar".
   await linha.getByRole("link", { name: "Editar" }).click();
-  const editar = page.locator("form", { hasText: "Salvar alterações" });
-  await editar.locator("input[name=novaSenha]").fill("NovaSenha2027");
-  await editar.getByRole("button", { name: "Salvar alterações" }).click();
-  await expect(editar).toHaveCount(0);
+  await linha.locator("input[name=novaSenha]").fill("NovaSenha2027");
+  await linha.getByRole("button", { name: "Salvar alterações" }).click();
+  await expect(linha.getByRole("button", { name: "Salvar alterações" })).toHaveCount(0);
 
   // Senha nova dada pelo gestor também precisa ser trocada pela pessoa no acesso seguinte.
   await entrar(page, "otavio@clevelandia.pr.gov.br", "NovaSenha2027");

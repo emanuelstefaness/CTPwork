@@ -54,7 +54,7 @@ export default async function ContratoDetailPage({ params }: { params: Promise<{
   // Outra prefeitura (ou contrato fora do alcance do perfil): "não encontrado", sem revelar que existe.
   if (!(await podeVerContrato(user, contrato.id))) notFound();
 
-  // Tudo vem do fluxo do próprio contrato (Cadastros › Fluxos de contrato), não de etapas fixas.
+  // Tudo vem do fluxo do próprio contrato (Cadastros › Tipos de contrato), não de etapas fixas.
   const { indice: idxAtual, atual: etapaAtual, proxima: proximaEtapa, concluido: naEtapaFinal, situacao, temEtapaDeAssinatura } = progressoDoContrato(contrato.etapas, contrato.etapaAtual);
   const naEtapaAssinatura = !!etapaAtual?.exigeAssinaturas;
   const assinaturasOk = !temEtapaDeAssinatura || !!contrato.fluxoAssinatura?.concluido;
@@ -348,7 +348,7 @@ export default async function ContratoDetailPage({ params }: { params: Promise<{
                   </select>
                 </label>
                 <div className="flex flex-col gap-2 sm:col-span-3 sm:flex-row sm:items-center sm:justify-between">
-                  <p className="text-xs text-slate-400">Não encontrou o tipo? Crie em Cadastros › Fluxos de projeto.</p>
+                  <p className="text-xs text-slate-400">Não encontrou o tipo? Crie em Cadastros › Tipos de projeto.</p>
                   <button className="primary-button"><FolderOpenIcon className="h-4 w-4" />Criar projeto</button>
                 </div>
               </FormSeguro>

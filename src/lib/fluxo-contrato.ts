@@ -3,7 +3,7 @@ import { lerIds } from "@/lib/permissoes";
 import { pedirDocumentosPadrao } from "@/lib/documentos-contrato";
 
 /**
- * Fluxos de contrato configuráveis (Cadastros › Fluxos de contrato). Cada contrato tem a sua
+ * Fluxos de contrato configuráveis (Cadastros › Tipos de contrato). Cada contrato tem a sua
  * própria cópia das etapas (EtapaContrato), feita na criação; `Contrato.etapaAtual` guarda a
  * chave da etapa em que ele está. A última etapa é o estado final ("concluído").
  */

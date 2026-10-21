@@ -11,6 +11,7 @@ import { documentosDoTexto, lerDocumentosPadrao } from "@/lib/documentos-padrao"
 import { documentosPadraoDoFormulario, pedirDocumentosPadrao } from "@/lib/documentos-contrato";
 import { lerPermissoes, permissoesDoTipo, type TipoPerfil } from "@/lib/permissoes";
 import { aindaHaAdministrador, MSG_SEM_ADMINISTRADOR } from "@/lib/usuarios-permissao";
+import { camposDoFormulario } from "@/lib/campos-formulario";
 
 /** Cadastros de apoio (seção 5.7 do prompt mestre) — restritos a Gestor CTP. */
 
@@ -28,7 +29,7 @@ export async function criarSetor(formData: FormData) {
 
   const setor = await prisma.setor.create({ data: { nome } });
   await registrarAuditoria({ userId: user.id, acao: "CRIAR", entidadeTipo: "Setor", entidadeId: setor.id, detalhe: nome });
-  revalidatePath("/cadastros");
+  revalidatePath("/cadastros", "layout");
 }
 
 export async function renomearSetor(formData: FormData) {
@@ -39,15 +40,15 @@ export async function renomearSetor(formData: FormData) {
 
   await prisma.setor.update({ where: { id: setorId }, data: { nome } });
   await registrarAuditoria({ userId: user.id, acao: "RENOMEAR", entidadeTipo: "Setor", entidadeId: setorId, detalhe: nome });
-  revalidatePath("/cadastros");
+  revalidatePath("/cadastros", "layout");
 }
 
 // ---------- Município ----------
 
 /**
- * Assistente "Nova prefeitura" (Cadastros › Municípios): num passo só cria o município, os
- * usuários da prefeitura (e-mail, senha e perfil definidos aqui pelo gestor) e, se pedido,
- * fluxos exclusivos copiados de um fluxo existente.
+ * Assistente "Nova prefeitura" (Cadastros › Prefeituras): a única forma de cadastrar uma
+ * prefeitura. Num passo só cria o município, os acessos da prefeitura (e-mail, senha e perfil
+ * definidos aqui pelo gestor) e, se pedido, tipos exclusivos copiados de um tipo existente.
  */
 export async function criarPrefeitura(formData: FormData) {
   const user = await exigirPermissao("cadastros");
@@ -118,7 +119,7 @@ export async function criarPrefeitura(formData: FormData) {
           chave: chaveProjeto,
           municipioId: m.id,
           etapas: {
-            create: tipoBase.etapas.map(({ ordem, nome, temInformacoesProjeto, temFormulario, temChecklist, temRevisao, modoRevisao, documentosPadrao }) => ({ ordem, nome, temInformacoesProjeto, temFormulario, temChecklist, temRevisao, modoRevisao, documentosPadrao })),
+            create: tipoBase.etapas.map(({ ordem, nome, temInformacoesProjeto, temFormulario, temChecklist, temRevisao, modoRevisao, documentosPadrao, perfisQueConduzem }) => ({ ordem, nome, temInformacoesProjeto, temFormulario, temChecklist, temRevisao, modoRevisao, documentosPadrao, perfisQueConduzem })),
           },
         },
       });
@@ -133,21 +134,8 @@ export async function criarPrefeitura(formData: FormData) {
     entidadeId: municipio.id,
     detalhe: `${nome} · ${usuarios.length} usuário(s)${fluxoBase ? ` · contrato: ${nomeFluxo}` : ""}${tipoBase ? ` · projeto: ${tipoBase.nome} — ${nomeCurto}` : ""}`,
   });
-  revalidatePath("/cadastros");
-  redirect(`/cadastros?aba=municipios&nova=${municipio.id}`);
-}
-
-export async function criarMunicipio(formData: FormData) {
-  const user = await exigirPermissao("cadastros");
-  const nome = String(formData.get("nome") ?? "").trim().slice(0, 120);
-  const contatoNome = String(formData.get("contatoNome") ?? "").trim().slice(0, 120) || null;
-  const contatoEmail = String(formData.get("contatoEmail") ?? "").trim().slice(0, 254) || null;
-  const contatoFone = String(formData.get("contatoFone") ?? "").trim().slice(0, 40) || null;
-  if (!nome) throw new Error("Nome do município é obrigatório.");
-
-  const municipio = await prisma.municipio.create({ data: { nome, contatoNome, contatoEmail, contatoFone } });
-  await registrarAuditoria({ userId: user.id, acao: "CRIAR", entidadeTipo: "Municipio", entidadeId: municipio.id, detalhe: nome });
-  revalidatePath("/cadastros");
+  revalidatePath("/cadastros", "layout");
+  redirect(`/cadastros/prefeituras/${municipio.id}?criada=1`);
 }
 
 export async function atualizarMunicipio(formData: FormData) {
@@ -157,11 +145,14 @@ export async function atualizarMunicipio(formData: FormData) {
   const contatoNome = String(formData.get("contatoNome") ?? "").trim().slice(0, 120) || null;
   const contatoEmail = String(formData.get("contatoEmail") ?? "").trim().slice(0, 254) || null;
   const contatoFone = String(formData.get("contatoFone") ?? "").trim().slice(0, 40) || null;
-  if (!nome) throw new Error("Nome do município é obrigatório.");
+  if (!nome) throw new Error("Informe o nome da prefeitura.");
+  if (contatoEmail && !EMAIL_VALIDO.test(contatoEmail)) throw new Error("Informe um e-mail de contato válido.");
+  const existentes = await prisma.municipio.findMany({ where: { id: { not: municipioId } }, select: { nome: true } });
+  if (existentes.some((m) => m.nome.trim().toLowerCase() === nome.toLowerCase())) throw new Error(`Já existe uma prefeitura chamada "${nome}".`);
 
   await prisma.municipio.update({ where: { id: municipioId }, data: { nome, contatoNome, contatoEmail, contatoFone } });
   await registrarAuditoria({ userId: user.id, acao: "ATUALIZAR", entidadeTipo: "Municipio", entidadeId: municipioId, detalhe: nome });
-  revalidatePath("/cadastros");
+  revalidatePath("/cadastros", "layout");
 }
 
 // ---------- Usuário ----------
@@ -188,19 +179,21 @@ export async function criarUsuario(formData: FormData) {
 
   if (tipo === "INTERNO") {
     const setorId = String(formData.get("setorId") ?? "") || null;
-    if (!setorId) throw new Error("Selecione o setor do colaborador.");
+    if (!setorId || !(await prisma.setor.findUnique({ where: { id: setorId }, select: { id: true } }))) throw new Error("Selecione o setor da pessoa.");
 
     const novo = await prisma.user.create({ data: { nome, email, passwordHash, trocarSenha: true, tipo, perfilId: perfil.id, perfilInterno: perfilLegado(perfil), setorId } });
     await registrarAuditoria({ userId: user.id, acao: "CRIAR", entidadeTipo: "User", entidadeId: novo.id, detalhe: `${email} · ${perfil.nome}` });
   } else {
     const municipioId = String(formData.get("municipioId") ?? "") || null;
-    if (!municipioId) throw new Error("Selecione o município deste usuário externo.");
+    if (!municipioId || !(await prisma.municipio.findUnique({ where: { id: municipioId }, select: { id: true } }))) {
+      throw new Error("Selecione a prefeitura desta pessoa.");
+    }
 
     const novo = await prisma.user.create({ data: { nome, email, passwordHash, trocarSenha: true, tipo, perfilId: perfil.id, municipioId } });
     await registrarAuditoria({ userId: user.id, acao: "CRIAR", entidadeTipo: "User", entidadeId: novo.id, detalhe: `${email} · ${perfil.nome}` });
   }
 
-  revalidatePath("/cadastros");
+  revalidatePath("/cadastros", "layout");
 }
 
 /** Perfil escolhido no formulário de usuário — tem de ser do mesmo tipo (CTP ou prefeitura). */
@@ -248,7 +241,7 @@ export async function atualizarUsuario(formData: FormData) {
 
   await prisma.user.update({ where: { id: usuarioId }, data });
   await registrarAuditoria({ userId: user.id, acao: "ATUALIZAR", entidadeTipo: "User", entidadeId: usuarioId, detalhe: nome });
-  revalidatePath("/cadastros");
+  revalidatePath("/cadastros", "layout");
 }
 
 /**
@@ -274,55 +267,40 @@ export async function alterarAcessoUsuario(usuarioId: string, ativo: boolean) {
     ...(ativo ? [] : [prisma.tokenSenha.updateMany({ where: { userId: usuarioId, usadoEm: null }, data: { usadoEm: new Date() } })]),
   ]);
   await registrarAuditoria({ userId: user.id, acao: ativo ? "REATIVAR_USUARIO" : "DESATIVAR_USUARIO", entidadeTipo: "User", entidadeId: usuarioId, detalhe: alvo.email });
-  revalidatePath("/cadastros");
+  revalidatePath("/cadastros", "layout");
 }
 
 // ---------- Modelo de Formulário ----------
 
-function montarCampos(formData: FormData) {
-  const chaves = formData.getAll("campoChave").map(String);
-  const labels = formData.getAll("campoLabel").map(String);
-  const tipos = formData.getAll("campoTipo").map(String);
-  const obrigatorios = formData.getAll("campoObrigatorio").map(String);
-
-  const campos = chaves
-    .map((chaveRaw, i) => ({
-      chave: chaveRaw.trim().toLowerCase().replace(/\s+/g, "_"),
-      label: (labels[i] ?? "").trim(),
-      tipo: tipos[i] ?? "text",
-      obrigatorio: obrigatorios.includes(String(i)),
-    }))
-    .filter((c) => c.chave && c.label);
-
-  if (campos.length === 0) throw new Error("Informe ao menos um campo para o modelo.");
-  return campos;
-}
-
 export async function criarModeloFormulario(formData: FormData) {
   const user = await exigirPermissao("cadastros");
-  const nome = String(formData.get("nome") ?? "").trim();
+  const nome = String(formData.get("nome") ?? "").trim().slice(0, 120);
   const tipo = String(formData.get("tipo"));
-  if (!nome) throw new Error("Nome do modelo é obrigatório.");
-  if (tipo !== "MEMORANDO" && tipo !== "CONTRATO") throw new Error("Tipo de modelo inválido.");
+  if (!nome) throw new Error("Dê um nome ao formulário.");
+  if (tipo !== "MEMORANDO" && tipo !== "CONTRATO") throw new Error("Escolha onde o formulário é usado.");
+  // As etapas de projeto usam um formulário só: um segundo nunca apareceria para a prefeitura.
+  if (tipo === "CONTRATO" && (await prisma.modeloFormulario.findFirst({ where: { tipo: "CONTRATO" }, select: { id: true } }))) {
+    throw new Error("Já existe o formulário das etapas de projeto. Edite-o em vez de criar outro.");
+  }
 
-  const campos = montarCampos(formData);
+  const campos = camposDoFormulario(formData);
 
   const modelo = await prisma.modeloFormulario.create({ data: { nome, tipo, campos: JSON.stringify(campos) } });
   await registrarAuditoria({ userId: user.id, acao: "CRIAR", entidadeTipo: "ModeloFormulario", entidadeId: modelo.id, detalhe: nome });
-  revalidatePath("/cadastros");
+  revalidatePath("/cadastros", "layout");
 }
 
 export async function atualizarModeloFormulario(formData: FormData) {
   const user = await exigirPermissao("cadastros");
   const modeloId = String(formData.get("modeloId"));
-  const nome = String(formData.get("nome") ?? "").trim();
-  if (!nome) throw new Error("Nome do modelo é obrigatório.");
+  const nome = String(formData.get("nome") ?? "").trim().slice(0, 120);
+  if (!nome) throw new Error("Dê um nome ao formulário.");
 
-  const campos = montarCampos(formData);
+  const campos = camposDoFormulario(formData);
 
   await prisma.modeloFormulario.update({ where: { id: modeloId }, data: { nome, campos: JSON.stringify(campos) } });
   await registrarAuditoria({ userId: user.id, acao: "ATUALIZAR", entidadeTipo: "ModeloFormulario", entidadeId: modeloId, detalhe: nome });
-  revalidatePath("/cadastros");
+  revalidatePath("/cadastros", "layout");
 }
 
 /**
@@ -354,8 +332,8 @@ export async function criarPerfil(formData: FormData) {
     data: { nome, tipo, permissoes: base?.permissoes ?? "[]", somenteParticipa: base?.somenteParticipa ?? false },
   });
   await registrarAuditoria({ userId: user.id, acao: "CRIAR", entidadeTipo: "Perfil", entidadeId: perfil.id, detalhe: nome });
-  revalidatePath("/cadastros");
-  redirect(`/cadastros?aba=perfis&perfil=${perfil.id}`);
+  revalidatePath("/cadastros", "layout");
+  redirect(`/cadastros/perfis?perfil=${perfil.id}`);
 }
 
 export async function atualizarPerfil(formData: FormData) {
@@ -396,8 +374,8 @@ export async function excluirPerfil(perfilId: string) {
   if (perfil._count.usuarios > 0) throw new Error(`Há ${perfil._count.usuarios} usuário(s) com este perfil. Mude o perfil deles antes de excluir.`);
   await prisma.perfil.delete({ where: { id: perfilId } });
   await registrarAuditoria({ userId: user.id, acao: "REMOVER", entidadeTipo: "Perfil", entidadeId: perfilId, detalhe: perfil.nome });
-  revalidatePath("/cadastros");
-  redirect("/cadastros?aba=perfis");
+  revalidatePath("/cadastros", "layout");
+  redirect("/cadastros/perfis");
 }
 
 // ---------- Fluxos de contrato (tipos de contrato + etapas configuráveis) ----------
@@ -405,26 +383,39 @@ export async function excluirPerfil(perfilId: string) {
 // existem têm a própria cópia das etapas (EtapaContrato). Tipos não são apagados, só desativados,
 // porque há contratos ligados a eles.
 
+/**
+ * "Quem faz esta etapa no CTP" (etapas de contrato e de projeto): `conduzem` = TODOS (qualquer
+ * pessoa com a permissão do perfil) ou PERFIS (só os perfis marcados em `campo`). Devolve o JSON
+ * com os ids — só perfis do CTP que existem, na ordem marcada; vazio = todos.
+ */
+async function perfisDoCtpEscolhidos(formData: FormData, campo: string) {
+  if (formData.get("conduzem") !== "PERFIS") return "[]";
+  const marcados = [...new Set(formData.getAll(campo).map(String))];
+  const validos = marcados.length ? await prisma.perfil.findMany({ where: { id: { in: marcados }, tipo: "INTERNO" }, select: { id: true } }) : [];
+  const ids = marcados.filter((id) => validos.some((p) => p.id === id));
+  if (!ids.length) throw new Error("Marque ao menos um perfil — ou escolha que qualquer pessoa da equipe pode.");
+  return JSON.stringify(ids);
+}
+
 async function lerEtapaContrato(formData: FormData) {
   const nome = String(formData.get("nome") ?? "").trim().slice(0, 120);
   const curto = String(formData.get("curto") ?? "").trim().slice(0, 24) || nome.slice(0, 24);
-  // Quem pode concluir a etapa: só perfis do CTP que existem; nenhum marcado = quem gerencia contratos.
-  const marcados = formData.getAll("perfisQueAvancam").map(String);
-  const validos = marcados.length ? await prisma.perfil.findMany({ where: { id: { in: marcados }, tipo: "INTERNO" }, select: { id: true } }) : [];
+  // Quem conclui: a prefeitura (aprova ou devolve) ou a equipe do CTP — toda ou só alguns perfis.
+  const concluidaPelaPrefeitura = formData.get("quemConclui") === "PREFEITURA";
   return {
     nome,
     curto,
     exigeAssinaturas: formData.get("exigeAssinaturas") === "on",
     liberaProjeto: formData.get("liberaProjeto") === "on",
-    perfisQueAvancam: JSON.stringify(validos.map((p) => p.id)),
-    concluidaPelaPrefeitura: formData.get("concluidaPelaPrefeitura") === "on",
+    perfisQueAvancam: concluidaPelaPrefeitura ? "[]" : await perfisDoCtpEscolhidos(formData, "perfisQueAvancam"),
+    concluidaPelaPrefeitura,
     documentosPadrao: documentosPadraoDoFormulario(formData),
   };
 }
 
 function validarQuemConclui(dados: { exigeAssinaturas: boolean; concluidaPelaPrefeitura: boolean }) {
   if (dados.exigeAssinaturas && dados.concluidaPelaPrefeitura) {
-    throw new Error("A etapa de assinaturas é conduzida pelo CTP; a prefeitura participa assinando.");
+    throw new Error("A coleta de assinaturas é conduzida pelo CTP (a prefeitura participa assinando). Escolha a equipe do CTP para concluir esta etapa.");
   }
 }
 
@@ -451,8 +442,8 @@ export async function criarFluxoContrato(formData: FormData) {
     },
   });
   await registrarAuditoria({ userId: user.id, acao: "CRIAR", entidadeTipo: "FluxoContrato", entidadeId: fluxo.id, detalhe: base ? `${nome} (cópia de ${base.nome})` : nome });
-  revalidatePath("/cadastros");
-  redirect(`/cadastros?aba=fluxos-contrato&fluxo=${fluxo.id}`);
+  revalidatePath("/cadastros", "layout");
+  redirect(`/cadastros/tipos-de-contrato?tipo=${fluxo.id}`);
 }
 
 export async function atualizarFluxoContrato(formData: FormData) {
@@ -466,7 +457,7 @@ export async function atualizarFluxoContrato(formData: FormData) {
   const municipioId = await municipioDoFormulario(formData);
   await prisma.fluxoContrato.update({ where: { id: fluxoId }, data: { nome, descricao, municipioId } });
   await registrarAuditoria({ userId: user.id, acao: "ATUALIZAR", entidadeTipo: "FluxoContrato", entidadeId: fluxoId, detalhe: nome });
-  revalidatePath("/cadastros");
+  revalidatePath("/cadastros", "layout");
 }
 
 export async function alternarFluxoContrato(fluxoId: string, ativo: boolean) {
@@ -477,7 +468,7 @@ export async function alternarFluxoContrato(fluxoId: string, ativo: boolean) {
   }
   await prisma.fluxoContrato.update({ where: { id: fluxoId }, data: { ativo } });
   await registrarAuditoria({ userId: user.id, acao: ativo ? "ATIVAR" : "DESATIVAR", entidadeTipo: "FluxoContrato", entidadeId: fluxoId });
-  revalidatePath("/cadastros");
+  revalidatePath("/cadastros", "layout");
 }
 
 export async function criarEtapaFluxoContrato(formData: FormData) {
@@ -496,7 +487,7 @@ export async function criarEtapaFluxoContrato(formData: FormData) {
 
   const etapa = await prisma.etapaFluxoContrato.create({ data: { fluxoId, ordem, chave, ...dados } });
   await registrarAuditoria({ userId: user.id, acao: "CRIAR", entidadeTipo: "EtapaFluxoContrato", entidadeId: etapa.id, detalhe: dados.nome });
-  revalidatePath("/cadastros");
+  revalidatePath("/cadastros", "layout");
 }
 
 export async function atualizarEtapaFluxoContrato(formData: FormData) {
@@ -515,7 +506,7 @@ export async function atualizarEtapaFluxoContrato(formData: FormData) {
   if (formData.get("aplicarAosContratos") === "on") {
     const abertas = await prisma.etapaContrato.findMany({ where: { chave: etapa.chave, concluidaEm: null, contrato: { fluxoId: etapa.fluxoId } }, select: { id: true, contratoId: true } });
     for (const e of abertas) {
-      await prisma.etapaContrato.update({ where: { id: e.id }, data: { concluidaPelaPrefeitura: dados.concluidaPelaPrefeitura } });
+      await prisma.etapaContrato.update({ where: { id: e.id }, data: { concluidaPelaPrefeitura: dados.concluidaPelaPrefeitura, perfisQueAvancam: dados.perfisQueAvancam } });
       await pedirDocumentosPadrao(e.contratoId, [{ chave: etapa.chave, documentosPadrao: dados.documentosPadrao }]);
     }
     aplicados = abertas.length;
@@ -524,7 +515,7 @@ export async function atualizarEtapaFluxoContrato(formData: FormData) {
     userId: user.id, acao: "ATUALIZAR", entidadeTipo: "EtapaFluxoContrato", entidadeId: etapaId,
     detalhe: aplicados ? `${dados.nome} · aplicado a ${aplicados} contrato(s) em andamento` : dados.nome,
   });
-  revalidatePath("/cadastros");
+  revalidatePath("/cadastros", "layout");
   revalidatePath("/contratos", "layout");
 }
 
@@ -533,7 +524,7 @@ export async function removerEtapaFluxoContrato(etapaId: string) {
   const etapa = await prisma.etapaFluxoContrato.findUniqueOrThrow({ where: { id: etapaId } });
   await prisma.etapaFluxoContrato.delete({ where: { id: etapaId } });
   await registrarAuditoria({ userId: user.id, acao: "REMOVER", entidadeTipo: "EtapaFluxoContrato", entidadeId: etapaId, detalhe: etapa.nome });
-  revalidatePath("/cadastros");
+  revalidatePath("/cadastros", "layout");
 }
 
 export async function moverEtapaFluxoContrato(etapaId: string, direcao: "up" | "down") {
@@ -549,7 +540,7 @@ export async function moverEtapaFluxoContrato(etapaId: string, direcao: "up" | "
     prisma.etapaFluxoContrato.update({ where: { id: vizinha.id }, data: { ordem: atual.ordem } }),
   ]);
   await registrarAuditoria({ userId: user.id, acao: "REORDENAR", entidadeTipo: "EtapaFluxoContrato", entidadeId: etapaId });
-  revalidatePath("/cadastros");
+  revalidatePath("/cadastros", "layout");
 }
 
 // ---------- Fluxos de projeto (tipos de projeto + etapas configuráveis) ----------
@@ -569,8 +560,8 @@ function slugificarChave(nome: string) {
 
 export async function criarTipoProjeto(formData: FormData) {
   const user = await exigirPermissao("cadastros");
-  const nome = String(formData.get("nome") ?? "").trim();
-  if (!nome) throw new Error("Nome do tipo de projeto é obrigatório.");
+  const nome = String(formData.get("nome") ?? "").trim().slice(0, 80);
+  if (!nome) throw new Error("Dê um nome ao tipo de projeto.");
 
   const chave = slugificarChave(nome);
   if (!chave) throw new Error("Não foi possível gerar um identificador a partir desse nome. Tente um nome com letras.");
@@ -580,26 +571,26 @@ export async function criarTipoProjeto(formData: FormData) {
 
   const tipo = await prisma.tipoProjetoModelo.create({ data: { chave, nome } });
   await registrarAuditoria({ userId: user.id, acao: "CRIAR", entidadeTipo: "TipoProjetoModelo", entidadeId: tipo.id, detalhe: nome });
-  revalidatePath("/cadastros");
-  redirect(`/cadastros?aba=fluxos&fluxo=${tipo.id}`);
+  revalidatePath("/cadastros", "layout");
+  redirect(`/cadastros/tipos-de-projeto?tipo=${tipo.id}`);
 }
 
 export async function renomearTipoProjeto(formData: FormData) {
   const user = await exigirPermissao("cadastros");
   const tipoId = String(formData.get("tipoId"));
-  const nome = String(formData.get("nome") ?? "").trim();
-  if (!nome) throw new Error("Nome é obrigatório.");
+  const nome = String(formData.get("nome") ?? "").trim().slice(0, 80);
+  if (!nome) throw new Error("Dê um nome ao tipo de projeto.");
 
   const municipioId = await municipioDoFormulario(formData);
   await prisma.tipoProjetoModelo.update({ where: { id: tipoId }, data: { nome, municipioId } });
   await registrarAuditoria({ userId: user.id, acao: "RENOMEAR", entidadeTipo: "TipoProjetoModelo", entidadeId: tipoId, detalhe: nome });
-  revalidatePath("/cadastros");
+  revalidatePath("/cadastros", "layout");
 }
 
-function lerCapacidadesEtapa(formData: FormData) {
+async function lerCapacidadesEtapa(formData: FormData) {
   const temChecklist = formData.get("temChecklist") === "on";
   return {
-    nome: String(formData.get("nome") ?? "").trim(),
+    nome: String(formData.get("nome") ?? "").trim().slice(0, 120),
     modoRevisao: String(formData.get("modoRevisao") ?? "ARTIGO"),
     temInformacoesProjeto: formData.get("temInformacoesProjeto") === "on",
     temFormulario: formData.get("temFormulario") === "on",
@@ -607,15 +598,16 @@ function lerCapacidadesEtapa(formData: FormData) {
     temRevisao: formData.get("temRevisao") === "on",
     // Sem checklist não há onde pedir documentos: a lista só vale com ele ligado.
     documentosPadrao: JSON.stringify(temChecklist ? documentosDoTexto(String(formData.get("documentosPadrao") ?? "")) : []),
+    perfisQueConduzem: await perfisDoCtpEscolhidos(formData, "perfisQueConduzem"),
   };
 }
 
 /**
  * Leva o modelo atualizado às etapas ainda NÃO INICIADAS dos projetos desse tipo (achadas pelo
- * nome que a etapa tinha antes da edição): nome, funções e documentos padrão que faltarem no
+ * nome que a etapa tinha antes da edição): nome, funções, quem conduz e documentos padrão que faltarem no
  * checklist. Etapas iniciadas ou concluídas ficam como estão — já há trabalho nelas.
  */
-async function aplicarModeloAsEtapasNaoIniciadas(chaveTipo: string, nomeAnterior: string, dados: ReturnType<typeof lerCapacidadesEtapa>) {
+async function aplicarModeloAsEtapasNaoIniciadas(chaveTipo: string, nomeAnterior: string, dados: Awaited<ReturnType<typeof lerCapacidadesEtapa>>) {
   const etapas = await prisma.etapaProjeto.findMany({
     where: { nome: nomeAnterior, status: "NAO_INICIADA", projeto: { tipo: chaveTipo } },
     include: { checklistItens: { select: { nome: true } } },
@@ -629,6 +621,7 @@ async function aplicarModeloAsEtapasNaoIniciadas(chaveTipo: string, nomeAnterior
         data: {
           nome: dados.nome, modoRevisao: dados.modoRevisao, temInformacoesProjeto: dados.temInformacoesProjeto,
           temFormulario: dados.temFormulario, temChecklist: dados.temChecklist, temRevisao: dados.temRevisao,
+          perfisQueConduzem: dados.perfisQueConduzem,
         },
       }),
       prisma.checklistItem.createMany({ data: documentos.filter((d) => !jaPedidos.has(d.toLowerCase())).map((nome) => ({ etapaId: etapa.id, nome })) }),
@@ -640,7 +633,7 @@ async function aplicarModeloAsEtapasNaoIniciadas(chaveTipo: string, nomeAnterior
 export async function criarEtapaModelo(formData: FormData) {
   const user = await exigirPermissao("cadastros");
   const tipoProjetoModeloId = String(formData.get("tipoProjetoModeloId"));
-  const dados = lerCapacidadesEtapa(formData);
+  const dados = await lerCapacidadesEtapa(formData);
   if (!dados.nome) throw new Error("Nome da etapa é obrigatório.");
 
   const ultima = await prisma.etapaModelo.findFirst({ where: { tipoProjetoModeloId }, orderBy: { ordem: "desc" } });
@@ -648,13 +641,13 @@ export async function criarEtapaModelo(formData: FormData) {
 
   const etapa = await prisma.etapaModelo.create({ data: { tipoProjetoModeloId, ordem, ...dados } });
   await registrarAuditoria({ userId: user.id, acao: "CRIAR", entidadeTipo: "EtapaModelo", entidadeId: etapa.id, detalhe: dados.nome });
-  revalidatePath("/cadastros");
+  revalidatePath("/cadastros", "layout");
 }
 
 export async function atualizarEtapaModelo(formData: FormData) {
   const user = await exigirPermissao("cadastros");
   const etapaModeloId = String(formData.get("etapaModeloId"));
-  const dados = lerCapacidadesEtapa(formData);
+  const dados = await lerCapacidadesEtapa(formData);
   if (!dados.nome) throw new Error("Nome da etapa é obrigatório.");
 
   const anterior = await prisma.etapaModelo.findUniqueOrThrow({ where: { id: etapaModeloId }, include: { tipoProjetoModelo: { select: { chave: true } } } });
@@ -666,7 +659,7 @@ export async function atualizarEtapaModelo(formData: FormData) {
     userId: user.id, acao: "ATUALIZAR", entidadeTipo: "EtapaModelo", entidadeId: etapaModeloId,
     detalhe: aplicadas ? `${dados.nome} · aplicado a ${aplicadas} etapa(s) não iniciada(s)` : dados.nome,
   });
-  revalidatePath("/cadastros");
+  revalidatePath("/cadastros", "layout");
   revalidatePath("/projetos", "layout");
 }
 
@@ -676,7 +669,7 @@ export async function removerEtapaModelo(etapaModeloId: string) {
 
   await prisma.etapaModelo.delete({ where: { id: etapaModeloId } });
   await registrarAuditoria({ userId: user.id, acao: "REMOVER", entidadeTipo: "EtapaModelo", entidadeId: etapaModeloId, detalhe: etapa.nome });
-  revalidatePath("/cadastros");
+  revalidatePath("/cadastros", "layout");
 }
 
 export async function moverEtapaModelo(etapaModeloId: string, direcao: "up" | "down") {
@@ -696,5 +689,5 @@ export async function moverEtapaModelo(etapaModeloId: string, direcao: "up" | "d
     prisma.etapaModelo.update({ where: { id: vizinha.id }, data: { ordem: atual.ordem } }),
   ]);
   await registrarAuditoria({ userId: user.id, acao: "REORDENAR", entidadeTipo: "EtapaModelo", entidadeId: etapaModeloId });
-  revalidatePath("/cadastros");
+  revalidatePath("/cadastros", "layout");
 }

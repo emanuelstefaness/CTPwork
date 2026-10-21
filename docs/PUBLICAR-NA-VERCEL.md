@@ -72,7 +72,7 @@ Sem dados de exemplo:
 2. Entre com o e-mail do administrador e a `ADMIN_SENHA`.
 3. O sistema abre **Minha conta** e pede para criar uma senha própria: a `ADMIN_SENHA` fica visível
    para quem tem acesso ao projeto na Vercel. Depois de trocar, entre de novo com a senha nova.
-4. Comece por **Cadastros › Municípios › Nova prefeitura (assistente)**.
+4. Comece por **Cadastros › Prefeituras › Nova prefeitura**.
 
 *(Opcional)* Em **Settings › Environment Variables**, adicione `APP_URL` com esse endereço. É o
 link que vai nos e-mails do sistema.
@@ -89,7 +89,7 @@ faça o Redeploy.
   limite é 20 MB. O sistema avisa antes de enviar um arquivo maior.
 - **E-mails não saem** enquanto não houver SMTP configurado (`SMTP_HOST`, `SMTP_PORT`,
   `SMTP_USER`, `SMTP_PASS`, `EMAIL_FROM`; ver README). Sem e-mail, "Esqueci minha senha" não
-  funciona: o gestor redefine a senha em Cadastros › Usuários. Os avisos continuam aparecendo no
+  funciona: o gestor redefine a senha em Editar (Cadastros › Equipe do CTP, ou na página da prefeitura). Os avisos continuam aparecendo no
   sino dentro do sistema.
 - **Mudanças no banco** (novos campos no `prisma/schema.prisma`) entram sozinhas na próxima
   publicação. Se uma mudança apagaria dados (ex.: remover uma coluna com conteúdo), a publicação

@@ -193,7 +193,7 @@ model Perfil {
 
 // ---------- Fluxos de contrato configuráveis ----------
 // Tipos de contrato (ex.: "Dispensa de licitação", "Termo aditivo") com as etapas de cada um,
-// montados pelo gestor em Cadastros › Fluxos de contrato.
+// montados pelo gestor em Cadastros › Tipos de contrato.
 //   exigeAssinaturas: nesta etapa abre-se o fluxo de assinatura, e só se avança com todas coletadas.
 //   liberaProjeto:    a partir desta etapa o projeto técnico pode ser criado.
 // A última etapa do fluxo é o estado final do contrato ("concluído").
@@ -350,6 +350,8 @@ model EtapaProjeto {
   temFormulario      Boolean   @default(false)
   temChecklist       Boolean   @default(false)
   temRevisao         Boolean   @default(false)
+  // JSON com ids de perfis do CTP que conduzem esta etapa; vazio = quem conduz etapas no projeto.
+  perfisQueConduzem  String    @default("[]")
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
 
@@ -727,6 +729,8 @@ model EtapaModelo {
   modoRevisao         String   @default("ARTIGO") // ARTIGO | DOCUMENTO_INTEIRO — só relevante quando temRevisao
   // JSON string[]: documentos pedidos automaticamente no checklist quando o projeto é criado.
   documentosPadrao    String   @default("[]")
+  // JSON com ids de perfis do CTP que conduzem a etapa (copiado para cada projeto); vazio = todos.
+  perfisQueConduzem   String   @default("[]")
   createdAt           DateTime @default(now())
 
   @@index([tipoProjetoModeloId, ordem])
