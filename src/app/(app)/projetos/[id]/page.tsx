@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui";
 import { BriefcaseIcon, BuildingLibraryIcon, CalendarDaysIcon, DocumentTextIcon } from "@heroicons/react/24/outline";
 import { formatarData } from "@/lib/formatters";
 import { ConversasRelacionadas } from "@/components/conversas-relacionadas";
+import { PessoasDoProjeto } from "./PessoasDoProjeto";
 
 export const metadata: Metadata = { title: "Projeto" };
 
@@ -82,6 +83,7 @@ export default async function ProjetoDetailPage({ params, searchParams }: { para
           </ol>
           <p className="mt-2 border-t border-slate-100 pt-3 text-[10px] font-medium text-slate-400">{concluidaCount} de {projeto.etapas.length} etapas concluídas</p>
           </div>
+          {isInterno && <PessoasDoProjeto user={user} projetoId={projeto.id} />}
           <ConversasRelacionadas user={user} projetoId={projeto.id} />
         </div>
 

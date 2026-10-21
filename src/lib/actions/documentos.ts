@@ -4,8 +4,8 @@ import mammoth from "mammoth";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { requireSession, assertAcessoContratante, AcessoNegadoError, exigir, type SessaoAtual } from "@/lib/tenant";
-import { pode } from "@/lib/permissoes";
 import { assertVeProjeto } from "@/lib/visibilidade";
+import { exigirNoProjeto } from "@/lib/membros-projeto";
 import { capturar, ErroUsuario, type Resultado } from "@/lib/resultado";
 import { registrarAuditoria } from "@/lib/audit";
 import { lerDocumento, normalizarConteudo } from "@/lib/editor/servidor";
@@ -43,10 +43,11 @@ async function carregarDocumento(documentoId: string) {
   return { user, documento, etapa: documento.etapa };
 }
 
-/** Escrever/enviar minutas e decidir sobre sugestões: permissão "Escrever minutas" do perfil. */
-function exigirInterno(user: SessaoAtual, msg?: string) {
-  if (!pode(user, "minuta.escrever")) throw new AcessoNegadoError(msg ?? `Seu perfil (${user.perfilNome}) não permite escrever minutas.`);
-}
+/**
+ * Escrever/enviar minutas e decidir sobre sugestões: "Escrever minutas" no perfil, ou participação
+ * "Editar" neste projeto (src/lib/membros-projeto.ts).
+ */
+const exigirEscrita = (user: SessaoAtual, projetoId: string) => exigirNoProjeto(user, projetoId, "minuta.escrever");
 
 async function usuariosDoMunicipio(municipioId: string) {
   return prisma.user.findMany({ where: { municipioId, tipo: "EXTERNO", ativo: true }, select: { id: true } });
@@ -58,10 +59,11 @@ async function usuariosDoMunicipio(municipioId: string) {
 export async function criarRascunho(etapaId: string): Promise<Resultado<{ id: string }>> {
   return executar(async () => {
     const user = await requireSession();
-    exigirInterno(user);
     const etapa = await prisma.etapaProjeto.findUnique({ where: { id: etapaId }, include: { projeto: true } });
     if (!etapa) throw new ErroUsuario("Etapa não encontrada.");
+    assertAcessoContratante(user, etapa.projeto.contratanteId);
     await assertVeProjeto(user, etapa.projetoId);
+    await exigirEscrita(user, etapa.projetoId);
     if (!etapa.temRevisao) throw new ErroUsuario("Esta etapa não tem documento para revisão.");
 
     const existente = await prisma.documentoVersionado.findFirst({ where: { etapaId, enviadoEm: null } });
@@ -94,8 +96,8 @@ export async function salvarRascunho(
   posicoes: { id: string; de: number; ate: number }[],
 ): Promise<Resultado<{ salvoEm: string }>> {
   return executar(async () => {
-    const { user, documento } = await carregarDocumento(documentoId);
-    exigirInterno(user);
+    const { user, documento, etapa } = await carregarDocumento(documentoId);
+    await exigirEscrita(user, etapa.projetoId);
     if (documento.enviadoEm) throw new ErroUsuario("Esta versão já foi enviada ao município e não pode mais ser alterada.");
     if (conteudo.length > TAMANHO_MAXIMO_DOCUMENTO) throw new ErroUsuario("O documento ficou grande demais para salvar (limite de 5 MB de texto).");
 
@@ -132,7 +134,7 @@ export async function salvarRascunho(
 export async function descartarRascunho(documentoId: string): Promise<Resultado> {
   return executar(async () => {
     const { user, documento, etapa } = await carregarDocumento(documentoId);
-    exigirInterno(user);
+    await exigirEscrita(user, etapa.projetoId);
     if (documento.enviadoEm) throw new ErroUsuario("Versões enviadas não podem ser descartadas.");
     await prisma.documentoVersionado.delete({ where: { id: documentoId } });
     await registrarAuditoria({ userId: user.id, acao: "DESCARTAR_RASCUNHO", entidadeTipo: "DocumentoVersionado", entidadeId: documentoId, detalhe: `v${documento.versao}` });
@@ -145,7 +147,7 @@ export async function descartarRascunho(documentoId: string): Promise<Resultado>
 export async function enviarVersao(documentoId: string): Promise<Resultado> {
   return executar(async () => {
     const { user, documento, etapa } = await carregarDocumento(documentoId);
-    exigirInterno(user);
+    await exigirEscrita(user, etapa.projetoId);
     if (documento.enviadoEm) throw new ErroUsuario("Esta versão já foi enviada.");
     const doc = lerDocumento(documento.conteudo);
     if (doc.textContent.trim().length < 20) throw new ErroUsuario("O documento está vazio. Escreva ou importe o conteúdo antes de enviar.");
@@ -179,8 +181,9 @@ export async function enviarVersao(documentoId: string): Promise<Resultado> {
 /** Converte um .docx em HTML para o editor carregar (títulos, listas, tabelas, negrito, itálico). */
 export async function importarDocx(formData: FormData): Promise<Resultado<{ html: string; avisos: number }>> {
   return executar(async () => {
+    // Só converte o arquivo enviado (não lê nem grava nada do sistema): basta ser da equipe do CTP.
     const user = await requireSession();
-    exigirInterno(user);
+    if (user.tipo !== "INTERNO") throw new AcessoNegadoError("Só a equipe do CTP importa documentos.");
     const arquivo = formData.get("arquivo");
     if (!(arquivo instanceof File) || arquivo.size === 0) throw new ErroUsuario("Selecione um arquivo .docx.");
     if (!arquivo.name.toLowerCase().endsWith(".docx")) {
@@ -353,7 +356,7 @@ export async function resolverAnotacao(anotacaoId: string, resolvido: boolean): 
 export async function decidirSugestoes(anotacaoIds: string[], decisao: DecisaoSugestao, motivo = ""): Promise<Resultado<{ total: number }>> {
   return executar(async () => {
     const user = await requireSession();
-    exigirInterno(user, "Só a equipe do CTP decide sobre sugestões de redação.");
+    if (user.tipo !== "INTERNO") throw new AcessoNegadoError("Só a equipe do CTP decide sobre sugestões de redação.");
     if (decisao !== "ACEITA" && decisao !== "RECUSADA") throw new ErroUsuario("Decisão inválida.");
     const motivoLimpo = motivo.trim().slice(0, 4000);
     if (decisao === "RECUSADA" && !motivoLimpo) throw new ErroUsuario("Explique ao município por que a sugestão não foi aceita.");
@@ -369,7 +372,10 @@ export async function decidirSugestoes(anotacaoIds: string[], decisao: DecisaoSu
       if (a.decisao) throw new ErroUsuario(`A sugestão sobre "${a.trecho.slice(0, 40)}…" já foi ${a.decisao === "ACEITA" ? "aceita" : "recusada"}.`);
       assertAcessoContratante(user, a.documento.etapa.projeto.contratanteId);
     }
-    for (const projetoId of new Set(anotacoes.map((a) => a.documento.etapa.projetoId))) await assertVeProjeto(user, projetoId);
+    for (const projetoId of new Set(anotacoes.map((a) => a.documento.etapa.projetoId))) {
+      await assertVeProjeto(user, projetoId);
+      await exigirEscrita(user, projetoId);
+    }
     if (decisao === "ACEITA") {
       const etapaIds = [...new Set(anotacoes.map((a) => a.documento.etapaId))];
       const rascunhos = await prisma.documentoVersionado.count({ where: { etapaId: { in: etapaIds }, enviadoEm: null } });

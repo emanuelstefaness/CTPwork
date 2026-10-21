@@ -234,6 +234,13 @@ async function main() {
     await prisma.perfil.upsert({ where: { id: p.id }, update: dados, create: { id: p.id, ...dados } });
   }
   await prisma.user.update({ where: { id: carla.id }, data: { perfilId: "perfil-juridico" } });
+  // Pessoas no projeto: a Jurídica (perfil que só vê onde participa) foi adicionada à minuta de
+  // Guarapuava para ajudar a escrevê-la.
+  await prisma.projetoMembro.upsert({
+    where: { projetoId_userId: { projetoId: "projeto-demo-guarapuava", userId: carla.id } },
+    update: { nivel: "EDITAR" },
+    create: { projetoId: "projeto-demo-guarapuava", userId: carla.id, nivel: "EDITAR", adicionadoPorId: ana.id },
+  });
   await prisma.user.update({ where: { id: "user-demo-rogerio" }, data: { perfilId: "perfil-servidor-tecnico" } });
 
   // Tipos de contrato gerais.

@@ -77,6 +77,8 @@ model User {
   contratosResponsavel Contrato[]       @relation("ContratoResponsavel")
   etapasContratoConcluidas EtapaContrato[] @relation("EtapaContratoConcluidaPor")
   projetosResponsavel  Projeto[]        @relation("ProjetoResponsavel")
+  participacoesProjeto ProjetoMembro[]  @relation("ProjetoMembro")
+  membrosAdicionados   ProjetoMembro[]  @relation("ProjetoMembroAdicionadoPor")
   etapasResponsavel    EtapaProjeto[]   @relation("EtapaResponsavel")
   revisoes             UnidadeRevisao[]
   comentariosDocumento ComentarioDocumento[]
@@ -295,6 +297,26 @@ model Projeto {
   etapas            EtapaProjeto[]
   eventosCronograma EventoCronograma[]
   conversas         Conversa[]
+  membros           ProjetoMembro[]
+}
+
+// Pessoa do CTP adicionada a um projeto por quem gerencia contratos. Só soma ao perfil, nunca tira:
+//   VER    — o projeto entra na lista dela (útil para perfis que "veem só onde participam");
+//   EDITAR — além de ver, conduz as etapas e escreve as minutas DESTE projeto, mesmo que o perfil
+//            não permita isso em geral. Ver src/lib/membros-projeto.ts.
+model ProjetoMembro {
+  id              String   @id @default(cuid())
+  projetoId       String
+  projeto         Projeto  @relation(fields: [projetoId], references: [id], onDelete: Cascade)
+  userId          String
+  user            User     @relation("ProjetoMembro", fields: [userId], references: [id])
+  nivel           String   // VER | EDITAR
+  adicionadoPorId String
+  adicionadoPor   User     @relation("ProjetoMembroAdicionadoPor", fields: [adicionadoPorId], references: [id])
+  createdAt       DateTime @default(now())
+
+  @@unique([projetoId, userId])
+  @@index([userId])
 }
 
 model EventoCronograma {

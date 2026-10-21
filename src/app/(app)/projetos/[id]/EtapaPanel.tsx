@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/tenant";
 import { pode } from "@/lib/permissoes";
+import { permissoesNoProjeto } from "@/lib/membros-projeto";
 import { STATUS_ETAPA_LABEL } from "@/lib/constants";
 import {
   aprovarItemChecklistSeguro, avancarStatusEtapaSeguro, concluirEtapaComRevisaoSeguro, criarEventoCronogramaSeguro,
@@ -25,8 +26,9 @@ const itemTone = (status: string) => status === "APROVADO" ? "emerald" : status 
 export default async function EtapaPanel({ etapaId, projeto }: { etapaId: string; projeto: { id: string; tipo: string; tipoLabel: string; contratanteId: string; codigo: string } }) {
   const user = await requireSession();
   const isInterno = user.tipo === "INTERNO";
-  // O que o perfil da pessoa permite nesta etapa (Cadastros › Perfis).
-  const gerencia = pode(user, "projeto.gerenciar");
+  // O que a pessoa pode neste projeto: o perfil (Cadastros › Perfis) + participação "Editar".
+  const permissoes = await permissoesNoProjeto(user, projeto.id);
+  const gerencia = permissoes.includes("projeto.gerenciar");
   const reabre = pode(user, "projeto.reabrir");
   const enviaDocumentos = pode(user, "etapa.enviar");
   const etapa = await prisma.etapaProjeto.findUniqueOrThrow({
@@ -298,7 +300,7 @@ export default async function EtapaPanel({ etapaId, projeto }: { etapaId: string
           {etapa.temFormulario && Formulario()}
         </div>
       )}
-      <DocumentoWorkspace etapaId={etapaId} versoes={versoes} usuario={{ id: user.id, nome: user.name ?? "Usuário", tipo: user.tipo, permissoes: user.permissoes }} tipoLabel={projeto.tipoLabel} />
+      <DocumentoWorkspace etapaId={etapaId} versoes={versoes} usuario={{ id: user.id, nome: user.name ?? "Usuário", tipo: user.tipo, permissoes }} tipoLabel={projeto.tipoLabel} />
       {gerencia && ultimaEnviada && etapa.status !== "CONCLUIDA" && (
         <div className="mt-5 flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
           <div>

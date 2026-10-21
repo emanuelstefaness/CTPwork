@@ -3,6 +3,7 @@
 import { prisma } from "@/lib/prisma";
 import { requireSession, exigir, exigirPermissao, assertAcessoContratante } from "@/lib/tenant";
 import { assertVeProjeto } from "@/lib/visibilidade";
+import { exigirNoProjeto } from "@/lib/membros-projeto";
 import { registrarAuditoria } from "@/lib/audit";
 import { salvarAnexo } from "@/lib/storage";
 import { revalidatePath } from "next/cache";
@@ -26,7 +27,7 @@ async function assertAcessoEtapa(etapaId: string) {
 /** Máquina 6.3, regra obrigatória 10.2: notifica automaticamente ao entrar em Aguardando município / ao ele responder. */
 export async function avancarStatusEtapa(etapaId: string, novoStatus: string) {
   const { user, etapa } = await assertAcessoEtapa(etapaId);
-  exigir(user, "projeto.gerenciar");
+  await exigirNoProjeto(user, etapa.projetoId, "projeto.gerenciar");
   if (!["NAO_INICIADA", "EM_ANDAMENTO", "AGUARDANDO_MUNICIPIO", "CONCLUIDA"].includes(novoStatus)) throw new Error("Status inválido.");
   // Etapa com documento só conclui por concluirEtapaComRevisao (que exige o parecer do município).
   if (novoStatus === "CONCLUIDA" && etapa.temRevisao) throw new Error('Use "Concluir revisão" para encerrar uma etapa com documento.');
@@ -98,7 +99,7 @@ export async function responderFormularioEtapa(formData: FormData) {
 export async function definirPrazoEtapa(formData: FormData) {
   const etapaId = String(formData.get("etapaId"));
   const { user, etapa } = await assertAcessoEtapa(etapaId);
-  exigir(user, "projeto.gerenciar");
+  await exigirNoProjeto(user, etapa.projetoId, "projeto.gerenciar");
 
   const prazoRaw = String(formData.get("prazo") ?? "");
   const prazo = prazoRaw ? new Date(prazoRaw) : null;
@@ -110,7 +111,7 @@ export async function definirPrazoEtapa(formData: FormData) {
 export async function criarItemChecklist(formData: FormData) {
   const etapaId = String(formData.get("etapaId"));
   const { user, etapa } = await assertAcessoEtapa(etapaId);
-  exigir(user, "projeto.gerenciar");
+  await exigirNoProjeto(user, etapa.projetoId, "projeto.gerenciar");
 
   const nome = String(formData.get("nome") ?? "").trim().slice(0, 200);
   if (!nome) throw new Error("Nome do item é obrigatório.");
@@ -140,7 +141,7 @@ export async function enviarArquivoChecklist(formData: FormData) {
 export async function aprovarItemChecklist(itemId: string) {
   const item = await prisma.checklistItem.findUniqueOrThrow({ where: { id: itemId } });
   const { user, etapa } = await assertAcessoEtapa(item.etapaId);
-  exigir(user, "projeto.gerenciar");
+  await exigirNoProjeto(user, etapa.projetoId, "projeto.gerenciar");
   if (item.status !== "ENVIADO") throw new Error("Só dá para aprovar um documento já enviado.");
 
   await prisma.checklistItem.update({ where: { id: itemId }, data: { status: "APROVADO" } });
@@ -151,7 +152,7 @@ export async function aprovarItemChecklist(itemId: string) {
 /** Regra 10.3: bloqueia conclusão da etapa de minuta enquanto houver unidade Pendente. */
 export async function concluirEtapaComRevisao(etapaId: string) {
   const { user, etapa } = await assertAcessoEtapa(etapaId);
-  exigir(user, "projeto.gerenciar");
+  await exigirNoProjeto(user, etapa.projetoId, "projeto.gerenciar");
 
   // Só a versão mais recente enviada conta: versões antigas substituídas não bloqueiam.
   const ultimaEnviada = await prisma.documentoVersionado.findFirst({
@@ -187,13 +188,15 @@ export async function enviarMensagemChat(formData: FormData) {
     data: { etapaId, autorId: user.id, texto: texto || "(anexo)", anexoId },
   });
 
-  // Avisa o outro lado. Município escreveu → responsável da etapa + quem do CTP já falou no chat;
+  // Avisa o outro lado. Município escreveu → responsável da etapa, quem do CTP já falou no chat e
+  // quem participa do projeto;
   // CTP escreveu → todos os usuários do município. Quem já tem aviso não lido deste chat não ganha outro.
   const destinatarios =
     user.tipo === "INTERNO"
       ? await prisma.user.findMany({ where: { municipioId: etapa.projeto.contratanteId, tipo: "EXTERNO", ativo: true }, select: { id: true } })
       : await prisma.user.findMany({
-          where: { tipo: "INTERNO", ativo: true, OR: [{ id: etapa.responsavelId }, { mensagens: { some: { etapaId } } }] },
+          // Responsável da etapa, quem do CTP já falou no chat e quem participa do projeto.
+          where: { tipo: "INTERNO", ativo: true, OR: [{ id: etapa.responsavelId }, { mensagens: { some: { etapaId } } }, { participacoesProjeto: { some: { projetoId: etapa.projetoId } } }] },
           select: { id: true },
         });
   const ids = destinatarios.map((d) => d.id).filter((id) => id !== user.id);

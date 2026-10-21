@@ -6,7 +6,7 @@ import { AcessoNegadoError, type SessaoAtual } from "@/lib/tenant";
  * Quais projetos e contratos cada pessoa enxerga:
  *   - prefeitura: só os do próprio município (regra fixa);
  *   - CTP com perfil "vê só onde participa": onde é responsável, responsável por alguma etapa
- *     do projeto ou signatária do contrato;
+ *     do projeto, foi adicionada ao projeto (ProjetoMembro) ou é signatária do contrato;
  *   - demais perfis do CTP: todos.
  */
 
@@ -19,6 +19,7 @@ export function filtroProjetosVisiveis(user: Usuario): Prisma.ProjetoWhereInput 
     OR: [
       { responsavelId: user.id },
       { etapas: { some: { responsavelId: user.id } } },
+      { membros: { some: { userId: user.id } } },
       { contratoOrigem: { responsavelId: user.id } },
     ],
   };
@@ -31,7 +32,8 @@ export function filtroContratosVisiveis(user: Usuario): Prisma.ContratoWhereInpu
     OR: [
       { responsavelId: user.id },
       { fluxoAssinatura: { signatarios: { some: { userId: user.id } } } },
-      { projetos: { some: { OR: [{ responsavelId: user.id }, { etapas: { some: { responsavelId: user.id } } }] } } },
+      // Quem participa de um projeto também vê o contrato de origem dele.
+      { projetos: { some: { OR: [{ responsavelId: user.id }, { etapas: { some: { responsavelId: user.id } } }, { membros: { some: { userId: user.id } } }] } } },
     ],
   };
 }

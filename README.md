@@ -196,6 +196,20 @@ cadastro). O catálogo fica em `src/lib/permissoes.ts`:
 - Avisos que iam "para os gestores" (prazo vencido, conversa sem responsável) vão para quem tem
   acesso a Cadastros.
 
+## Pessoas no projeto
+
+Na página do projeto, o painel **Pessoas no projeto** mostra a responsável e quem mais da equipe do
+CTP participa. Quem tem a permissão **Gerenciar contratos** (quem cria contratos e projetos)
+adiciona pessoas, muda o nível e remove. A participação só soma ao perfil, nunca tira:
+
+| Nível | O que a pessoa ganha neste projeto |
+|---|---|
+| Ver | O projeto (e o contrato de origem) passa a aparecer para ela, mesmo com perfil "vê só onde participa" |
+| Editar | Também conduz as etapas e escreve as minutas deste projeto, mesmo que o perfil não permita em geral |
+
+Quem é adicionado recebe um aviso, e passa a ser avisado das mensagens da prefeitura no chat das
+etapas. Regras em `src/lib/membros-projeto.ts`; visibilidade em `src/lib/visibilidade.ts`.
+
 ## Fluxos de contrato (tipos de contrato)
 
 Em **Cadastros › Fluxos de contrato** o gestor cria tipos de contrato (ex.: Padrão, Dispensa de

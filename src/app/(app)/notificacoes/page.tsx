@@ -15,6 +15,7 @@ import {
   ExclamationTriangleIcon,
   EyeIcon,
   InboxArrowDownIcon,
+  UserPlusIcon,
 } from "@heroicons/react/24/outline";
 
 export const metadata: Metadata = { title: "Notificações" };
@@ -28,6 +29,7 @@ const estiloPorTipo: Record<string, { icon: typeof BellIcon; cor: string; rotulo
   CTP_COMENTOU: { icon: ChatBubbleLeftRightIcon, cor: "bg-blue-50 text-blue-700", rotulo: "Comentário do CTP" },
   ASSINATURA_PENDENTE: { icon: DocumentCheckIcon, cor: "bg-emerald-50 text-emerald-600", rotulo: "Assinatura" },
   NOVA_MENSAGEM: { icon: ChatBubbleLeftRightIcon, cor: "bg-violet-50 text-violet-600", rotulo: "Conversa" },
+  PROJETO_PARTICIPANTE: { icon: UserPlusIcon, cor: "bg-cyan-50 text-cyan-700", rotulo: "Projeto" },
 };
 const estiloPadrao = { icon: BellIcon, cor: "bg-slate-100 text-slate-500", rotulo: "Aviso" };
 
