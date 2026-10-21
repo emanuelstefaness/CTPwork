@@ -107,7 +107,7 @@ export function AppShell({
           >
             <Bars3Icon className="h-5 w-5" />
           </button>
-          <Link href={inicio} className="hidden items-center gap-2 font-bold text-slate-950 sm:flex">
+          <Link href={inicio} className="flex items-center gap-2 font-bold text-slate-950">
             <span className="grid h-8 w-8 place-items-center rounded-lg bg-cyan-500 text-white text-xs font-bold">CTP</span>
             <span>Work</span>
           </Link>

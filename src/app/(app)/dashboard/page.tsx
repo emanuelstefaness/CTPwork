@@ -75,12 +75,11 @@ export default async function DashboardPage() {
   await garantirEtapasDosContratos((await prisma.contrato.findMany({ where: { etapas: { none: {} } }, select: { id: true } })).map((c) => c.id));
   const now = new Date();
   const criticalLimit = new Date(now.getTime() + 1000 * 60 * 60 * 24 * 15);
-  const [etapasPorStatus, contratosPorEtapa, projetosAtivos, memorandosAbertos, assinaturasPendentes, prazos, atividades, criticos] = await Promise.all([
+  const [etapasPorStatus, contratosPorEtapa, projetosAtivos, assinaturasPendentes, prazos, atividades, criticos] = await Promise.all([
     prisma.etapaProjeto.groupBy({ by: ["status"], _count: true }),
     // Etapa atual de cada contrato, com a posição dela no fluxo do próprio contrato.
     prisma.contrato.findMany({ select: { etapaAtual: true, etapas: { select: { chave: true, curto: true, ordem: true, exigeAssinaturas: true, liberaProjeto: true }, orderBy: { ordem: "asc" } } } }),
     prisma.projeto.count(),
-    prisma.memorando.count({ where: { status: { in: ["ABERTO", "EM_EXECUCAO"] } } }),
     prisma.signatario.count({ where: { status: "PENDENTE" } }),
     prisma.etapaProjeto.findMany({
       where: { prazo: { not: null }, status: { not: "CONCLUIDA" } },
@@ -150,7 +149,7 @@ export default async function DashboardPage() {
           </div>
         </Panel>
 
-        <Panel title="Atividades recentes" description={`${memorandosAbertos} memorandos ainda abertos`}>
+        <Panel title="Atividades recentes" description="Últimas ações registradas na plataforma">
           <div className="divide-y divide-slate-100 px-5">
             {atividades.map((item) => (
               <div key={item.id} className="flex gap-3 py-3.5">

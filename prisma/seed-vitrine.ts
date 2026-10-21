@@ -185,7 +185,7 @@ async function anexoPdf(id: string, nome: string, c: { id: string; codigo: strin
     { estilo: "nota", texto: enviaQuem === "CTP" ? "Emitido pelo Cilla Tech Park." : "Emitido pela prefeitura contratante." },
   ];
   const tamanho = await gravarPdf(id, `CTP Work — Cilla Tech Park  ·  ${nome}`, blocos);
-  const dados = { nomeOriginal: `${nome.replace(/[^\p{L}\p{N}]+/gu, "_")}.pdf`, caminho: `/api/files/${id}`, tamanho, tipoMime: "application/pdf", contratoId: c.id, createdAt: d(quando) };
+  const dados = { nomeOriginal: `${nome.replace(/[\/:*?"<>|]+/g, "").replace(/\s+/g, " ").trim()}.pdf`, caminho: `/api/files/${id}`, tamanho, tipoMime: "application/pdf", contratoId: c.id, createdAt: d(quando) };
   await prisma.anexo.upsert({ where: { id }, update: dados, create: { id, ...dados } });
   return id;
 }

@@ -10,6 +10,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { exigirPermissao } from "@/lib/tenant";
+import { perfilPadrao } from "@/lib/permissoes";
 import { removerEtapaModelo, moverEtapaModelo } from "@/lib/actions/cadastros";
 import { PageHeader, Panel, Badge } from "@/components/ui";
 import UsuarioForm from "./UsuarioForm";
@@ -59,6 +60,9 @@ export default async function CadastrosPage({ searchParams }: { searchParams: Pr
   const perfilSel = perfis.find((p) => p.id === perfilParam) ?? perfis[0];
   const perfisOpcoes = perfis.map((p) => ({ id: p.id, nome: p.nome, tipo: p.tipo }));
   const perfisInternos = perfisOpcoes.filter((p) => p.tipo === "INTERNO");
+  // Mesmo perfil que vale no login (src/lib/tenant.ts): sem perfil gravado, o de fábrica do tipo.
+  const perfilEfetivo = (u: { tipo: string; perfilInterno: string | null; perfilId: string | null }) =>
+    perfisOpcoes.find((p) => p.id === u.perfilId && p.tipo === u.tipo) ?? perfisOpcoes.find((p) => p.id === perfilPadrao(u));
   const fluxoSelecionado = tiposProjeto.find((t) => t.id === fluxoParam) ?? tiposProjeto[0];
   const fluxoContratoSel = fluxosContrato.find((f) => f.id === fluxoParam) ?? fluxosContrato[0];
 
@@ -215,7 +219,7 @@ export default async function CadastrosPage({ searchParams }: { searchParams: Pr
                       setores={setores}
                       municipios={municipios}
                       perfis={perfisOpcoes}
-                      usuario={{ id: u.id, nome: u.nome, email: u.email, tipo: u.tipo, perfilId: u.perfilId, setorId: u.setorId, municipioId: u.municipioId }}
+                      usuario={{ id: u.id, nome: u.nome, email: u.email, tipo: u.tipo, perfilId: perfilEfetivo(u)?.id ?? null, setorId: u.setorId, municipioId: u.municipioId }}
                       action={atualizarUsuarioSeguro}
                     />
                   ) : (
@@ -223,7 +227,7 @@ export default async function CadastrosPage({ searchParams }: { searchParams: Pr
                       <div className={`min-w-0 ${u.ativo ? "" : "opacity-60"}`}>
                         <div className="flex flex-wrap items-center gap-2">
                           <p className="truncate text-sm font-semibold text-slate-800">{u.nome}</p>
-                          <Badge tone={u.tipo === "INTERNO" ? "cyan" : "emerald"}>{u.perfil?.nome ?? (u.tipo === "INTERNO" ? "Colaborador" : "Município")}{u.tipo === "INTERNO" ? " · CTP" : ""}</Badge>
+                          <Badge tone={u.tipo === "INTERNO" ? "cyan" : "emerald"}>{perfilEfetivo(u)?.nome ?? (u.tipo === "INTERNO" ? "Colaborador" : "Município")}{u.tipo === "INTERNO" ? " · CTP" : ""}</Badge>
                           {!u.ativo && <Badge tone="slate">Desativado{u.desativadoEm ? ` em ${formatarDiaDoEvento(u.desativadoEm)}` : ""}</Badge>}
                         </div>
                         <p className="mt-0.5 truncate text-xs text-slate-400">{u.email} · {u.tipo === "INTERNO" ? (u.setor?.nome ?? "sem setor") : (u.municipio?.nome ?? "sem município")}</p>

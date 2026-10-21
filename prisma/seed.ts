@@ -52,6 +52,7 @@ async function main() {
       passwordHash: senha,
       tipo: "INTERNO",
       perfilInterno: "GESTOR",
+      perfilId: "perfil-gestor",
       setorId: setorTecnico.id,
     },
   });
@@ -65,6 +66,7 @@ async function main() {
       passwordHash: senha,
       tipo: "INTERNO",
       perfilInterno: "COLABORADOR",
+      perfilId: "perfil-colaborador",
       setorId: setorTecnico.id,
     },
   });
@@ -78,6 +80,7 @@ async function main() {
       passwordHash: senha,
       tipo: "INTERNO",
       perfilInterno: "COLABORADOR",
+      perfilId: "perfil-colaborador",
       setorId: setorJuridico.id,
     },
   });
@@ -91,6 +94,7 @@ async function main() {
       passwordHash: senha,
       tipo: "INTERNO",
       perfilInterno: "COLABORADOR",
+      perfilId: "perfil-colaborador",
       setorId: setorAdmin.id,
     },
   });
@@ -99,10 +103,11 @@ async function main() {
     where: { email: "municipio@cilla.mg.gov.br" },
     update: {},
     create: {
-      nome: "Prefeito(a) de Cilla",
+      nome: "Gabinete do Prefeito de Guarapuava",
       email: "municipio@cilla.mg.gov.br",
       passwordHash: senha,
       tipo: "EXTERNO",
+      perfilId: "perfil-municipio",
       municipioId: municipio.id,
     },
   });
