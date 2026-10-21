@@ -1,7 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { Node as PMNode } from "@tiptap/pm/model";
-import { schemaDocumento } from "@/lib/editor/servidor";
+import { normalizarConteudo, schemaDocumento } from "@/lib/editor/servidor";
 import { ajustarAPalavras, ancoraValida, localizarAncora, localizarTrecho, textoDoTrecho } from "@/lib/editor/ancoras";
 import { limparSugestao } from "@/lib/editor/extensoes";
 
@@ -59,5 +59,27 @@ describe("sugestão de redação", () => {
     assert.equal(limparSugestao("  36 (trinta e seis) meses  "), "36 (trinta e seis) meses");
     assert.equal(limparSugestao("Art. 1º\r\n\r\n\r\n\r\nParágrafo único.   \nTexto"), "Art. 1º\n\nParágrafo único.\nTexto");
     assert.equal(limparSugestao("   "), "");
+  });
+});
+
+describe("links do editor (segunda barreira no servidor)", () => {
+  const comLink = (href: string) => ({
+    type: "doc",
+    content: [{ type: "paragraph", content: [{ type: "text", text: "clique aqui", marks: [{ type: "link", attrs: { href } }] }] }],
+  });
+  const marcas = (json: string) => JSON.parse(json).content[0].content[0].marks ?? [];
+
+  it("remove links javascript: e data:, mantendo o texto", () => {
+    for (const href of ["javascript:alert(1)", " JavaScript:alert(1)", "data:text/html;base64,PHNjcmlwdD4=", "//outro-site.com"]) {
+      const json = normalizarConteudo(comLink(href));
+      assert.equal(marcas(json).length, 0, href);
+      assert.equal(JSON.parse(json).content[0].content[0].text, "clique aqui");
+    }
+  });
+
+  it("mantém links web, e-mail, telefone e âncoras", () => {
+    for (const href of ["https://www.gov.br", "http://exemplo.com", "mailto:gabinete@prefeitura.gov.br", "tel:+554632521122", "#art-9", "/projetos"]) {
+      assert.equal(marcas(normalizarConteudo(comLink(href))).length, 1, href);
+    }
   });
 });

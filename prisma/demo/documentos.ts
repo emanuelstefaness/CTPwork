@@ -214,4 +214,3 @@ export const SECOES_MOBILIDADE_V1: SecaoSpec[] = [
 ];
 
 /** Versão anterior do Plano Diretor de Guarapuava: seções resumidas + comentários já endereçados na v2. */
-export const SECOES_PD_GUARAPUAVA_V1_RESUMO = `Versão preliminar da Fase 01 do Plano Diretor de Guarapuava, apresentada em 21/08/2026. Contém o diagnóstico territorial, o zoneamento urbano proposto e as diretrizes de mobilidade em formato resumido. Os comentários do município sobre esta versão foram incorporados na versão 2.`;

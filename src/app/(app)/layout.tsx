@@ -32,6 +32,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   // /login com o cookie antigo ainda presente causava loop infinito (middleware manda de volta pra "/").
   const session = await sessaoValidaOuNula();
   if (!session) redirect("/api/sair-sessao-invalida");
+  // Senha definida pelo gestor: cada página exige a sessão com requireSession, que leva a
+  // "Minha conta" até a pessoa criar a própria senha (src/lib/tenant.ts).
 
   const isInterno = session.tipo === "INTERNO";
 

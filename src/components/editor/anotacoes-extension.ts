@@ -16,7 +16,7 @@ import { Decoration, DecorationSet } from "@tiptap/pm/view";
  */
 export type AncoraVisual = { id: string; de: number; ate: number; classe: string; marcador?: string; insercao?: string };
 
-export const anotacoesKey = new PluginKey<DecorationSet>("anotacoes");
+const anotacoesKey = new PluginKey<DecorationSet>("anotacoes");
 
 function construir(doc: Parameters<typeof DecorationSet.create>[0], lista: AncoraVisual[]) {
   const max = doc.content.size;

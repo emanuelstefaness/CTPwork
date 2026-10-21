@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { lerDocumentosPadraoContrato } from "@/lib/documentos-contrato-tipos";
 
-export { documentosEmAberto, documentosPadraoDoFormulario, lerDocumentosPadraoContrato } from "@/lib/documentos-contrato-tipos";
+export { documentosEmAberto, documentosPadraoDoFormulario } from "@/lib/documentos-contrato-tipos";
 export type { DocumentoPadraoContrato, EnviaQuem } from "@/lib/documentos-contrato-tipos";
 
 /**

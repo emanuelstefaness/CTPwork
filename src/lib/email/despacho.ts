@@ -1,3 +1,4 @@
+import { after } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { resolverLinks } from "@/lib/links-notificacao";
 import { enviarEmail, urlDoSistema } from "./transporte";
@@ -19,6 +20,18 @@ const ATRASO_MS = 5_000;
 const estado = globalThis as unknown as { __emailTimer?: ReturnType<typeof setTimeout>; __emailRodando?: Promise<void> };
 
 export function agendarDespachoEmails(atraso = ATRASO_MS) {
+  // Dentro de uma requisição, `after` mantém a função viva até o despacho terminar — na Vercel o
+  // processo é congelado assim que a resposta sai, e um temporizador solto nunca dispararia.
+  // Fora de uma requisição (scripts), fica o temporizador.
+  try {
+    after(async () => {
+      await new Promise((r) => setTimeout(r, atraso));
+      await despacharEmails();
+    });
+    return;
+  } catch {
+    // fora do escopo de uma requisição
+  }
   if (estado.__emailTimer) clearTimeout(estado.__emailTimer);
   estado.__emailTimer = setTimeout(() => {
     estado.__emailTimer = undefined;
@@ -26,7 +39,7 @@ export function agendarDespachoEmails(atraso = ATRASO_MS) {
   }, atraso);
 }
 
-export async function despacharEmails(): Promise<void> {
+async function despacharEmails(): Promise<void> {
   // Um despacho por vez no processo; quem chegar durante um envio reagenda para depois.
   if (estado.__emailRodando) {
     await estado.__emailRodando;

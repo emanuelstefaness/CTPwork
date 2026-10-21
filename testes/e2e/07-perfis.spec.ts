@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { CTP, MUNICIPIO, SENHA, entrar, erroDoFormulario, selecionarTrecho } from "./ajuda";
+import { CTP, MUNICIPIO, SENHA, criarPropriaSenha, entrar, erroDoFormulario, selecionarTrecho } from "./ajuda";
 
 /** Perfis (cargos) com permissões configuráveis, em Cadastros › Perfis. */
 test.describe.configure({ mode: "serial" });
@@ -74,6 +74,8 @@ test("perfil do CTP que vê só onde participa, sem dashboard e sem gerenciar co
   await expect(page.locator("div.divide-y > div").filter({ hasText: "paula.juridica@ctp.org.br" })).toContainText("Jurídico");
 
   await entrar(page, "paula.juridica@ctp.org.br");
+  await criarPropriaSenha(page, "paula.juridica@ctp.org.br", SENHA, "Paula2026ok"); // senha dada pelo gestor: troca no 1º acesso
+  await page.goto("/");
   await expect(page).toHaveURL(/\/projetos/); // sem dashboard, a página inicial é a de projetos
   await page.getByRole("button", { name: "Abrir menu" }).click();
   const menu = page.locator("aside nav");

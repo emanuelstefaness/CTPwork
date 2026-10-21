@@ -45,7 +45,7 @@ function quebrar(texto: string, max: number): string[] {
 
 type Linha = { x: number; y: number; fonte: "F1" | "F2" | "F3"; tam: number; texto: string };
 
-export function gerarPdf(rodape: string, blocos: Bloco[]): Buffer {
+function gerarPdf(rodape: string, blocos: Bloco[]): Buffer {
   const paginas: Linha[][] = [[]];
   let y = 790;
   const nova = () => {

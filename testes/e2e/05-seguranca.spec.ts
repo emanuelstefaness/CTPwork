@@ -111,3 +111,63 @@ test.describe("Desativar acesso de usuário", () => {
     await expect(linhaDe(page, CTP.bruno).getByRole("button", { name: "Desativar acesso" })).toBeVisible();
   });
 });
+
+test.describe("Senhas, sessões e anexos", () => {
+  test("trocar a senha encerra todas as sessões abertas, e a pessoa entra de novo com a senha nova", async ({ page, browser }) => {
+    const outro = await browser.newContext();
+    const celular = await outro.newPage();
+    await entrar(celular, MUNICIPIO.juliana);
+    await celular.goto("/projetos");
+    await expect(celular.locator("h1")).toBeVisible();
+
+    const trocar = async (atual: string, nova: string) => {
+      await page.goto("/conta");
+      await page.getByLabel("Senha atual", { exact: true }).fill(atual);
+      await page.getByLabel("Nova senha", { exact: true }).fill(nova);
+      await page.getByLabel("Repita a nova senha", { exact: true }).fill(nova);
+      await page.getByRole("button", { name: "Alterar senha" }).click();
+      await expect(page).toHaveURL(/\/login\?senha=alterada/);
+      await expect(page.getByRole("status")).toContainText("Senha alterada");
+    };
+    await entrar(page, MUNICIPIO.juliana);
+    await trocar(SENHA, "Juliana2026x");
+
+    // O outro navegador, aberto com a senha antiga, cai na entrada no próximo clique.
+    await celular.goto("/projetos");
+    await expect(celular).toHaveURL(/\/login\?sessao=encerrada/);
+    await outro.close();
+
+    await entrar(page, MUNICIPIO.juliana, "Juliana2026x");
+    await trocar("Juliana2026x", SENHA); // devolve a senha padrão: outros testes entram como Juliana
+  });
+
+  test("o limite de tentativas vale também para quem chama a API de login direto", async ({ page }) => {
+    const email = "municipio@cilla.mg.gov.br";
+    for (let i = 0; i < 5; i++) {
+      const { csrfToken } = await (await page.request.get("/api/auth/csrf")).json();
+      await page.request.post("/api/auth/callback/credentials", { form: { email, password: `errada-${i}`, csrfToken }, maxRedirects: 0 });
+    }
+    // Pelo formulário, nem a senha certa entra enquanto durar o bloqueio.
+    await page.goto("/login");
+    await page.getByLabel("E-mail").fill(email);
+    await page.getByLabel("Senha", { exact: true }).fill(SENHA);
+    await page.getByRole("button", { name: "Entrar" }).click();
+    await expect(erroDoFormulario(page)).toContainText("Muitas tentativas");
+  });
+
+  test("arquivo disfarçado (página HTML com nome de PDF) é recusado", async ({ page }) => {
+    await entrar(page, MUNICIPIO.marina);
+    await page.goto("/conversas/nova");
+    await page.waitForLoadState("networkidle");
+    await page.getByRole("textbox", { name: "Assunto" }).fill("Envio de orçamento");
+    await page.getByLabel("Mensagem", { exact: true }).fill("Segue o orçamento.");
+    await page.locator("input[name=arquivo]").setInputFiles({
+      name: "orcamento.pdf",
+      mimeType: "application/pdf",
+      buffer: Buffer.from("<html><body><script>alert(document.cookie)</script></body></html>"),
+    });
+    await page.getByRole("button", { name: /Iniciar conversa|Enviar/ }).click();
+    await expect(erroDoFormulario(page)).toContainText('não é um arquivo .pdf válido');
+    await expect(page).toHaveURL(/\/conversas\/nova/);
+  });
+});

@@ -12,17 +12,17 @@ export async function criarEventoCronograma(formData: FormData) {
   const projeto = await prisma.projeto.findUniqueOrThrow({ where: { id: projetoId } });
   await assertVeProjeto(user, projeto.id);
 
-  const data = String(formData.get("data") ?? "");
-  const titulo = String(formData.get("titulo") ?? "").trim();
-  const descricao = String(formData.get("descricao") ?? "").trim();
-  const responsavelNome = String(formData.get("responsavelNome") ?? "").trim();
+  const data = new Date(String(formData.get("data") ?? ""));
+  const titulo = String(formData.get("titulo") ?? "").trim().slice(0, 200);
+  const descricao = String(formData.get("descricao") ?? "").trim().slice(0, 2000);
+  const responsavelNome = String(formData.get("responsavelNome") ?? "").trim().slice(0, 120);
 
-  if (!data || !titulo || !responsavelNome) {
+  if (Number.isNaN(data.getTime()) || !titulo || !responsavelNome) {
     throw new Error("Data, título e responsável são obrigatórios.");
   }
 
   await prisma.eventoCronograma.create({
-    data: { projetoId, data: new Date(data), titulo, descricao: descricao || null, responsavelNome },
+    data: { projetoId, data, titulo, descricao: descricao || null, responsavelNome },
   });
   revalidatePath(`/projetos/${projetoId}`);
 }

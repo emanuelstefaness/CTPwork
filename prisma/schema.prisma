@@ -1,7 +1,7 @@
 // CTP Work — schema de dados completo (seção 5 do prompt mestre)
-// Dev: SQLite (zero-install). Produção: trocar provider para "postgresql" + DATABASE_URL.
-// SQLite não suporta enums nativos no Prisma: valores são strings restritas por
-// constantes TS em src/lib/constants.ts + validação Zod nas rotas.
+// Dev: SQLite (zero-install). Na Vercel, PostgreSQL: scripts/schema-postgres.mjs gera a variante.
+// SQLite não suporta enums nativos no Prisma: valores são strings, conferidas pelas server actions
+// (src/lib/actions) contra as listas aceitas.
 // Isolamento por contratante é aplicado na camada de aplicação (ver src/lib/tenant.ts),
 // não via RLS nativo do banco — decisão registrada na seção 12 do prompt mestre.
 
@@ -60,6 +60,10 @@ model User {
   // desconectado na hora e sai das listas de escolha e dos avisos — o histórico fica intacto.
   ativo         Boolean   @default(true)
   desativadoEm  DateTime?
+  // Sobe a cada troca de senha ou desativação: sessões abertas com o número antigo deixam de valer.
+  sessaoVersao  Int       @default(0)
+  // Senha definida por outra pessoa (o gestor, no cadastro): a pessoa troca no próximo acesso.
+  trocarSenha   Boolean   @default(false)
   createdAt     DateTime  @default(now())
 
   tokensSenha          TokenSenha[]
@@ -642,6 +646,17 @@ model TokenSenha {
   createdAt DateTime  @default(now())
 
   @@index([userId, createdAt])
+}
+
+// Tentativas de acesso que falharam (senha errada, pedido de nova senha), contadas por chave
+// ("login:<e-mail>", "login-ip:<ip>"…) dentro de uma janela. Fica no banco, e não na memória do
+// servidor, para valer entre as várias instâncias da hospedagem. Ver src/lib/limite-tentativas.ts.
+model TentativaAcesso {
+  id       String   @id @default(cuid())
+  chave    String
+  criadoEm DateTime @default(now())
+
+  @@index([chave, criadoEm])
 }
 
 model AuditLog {

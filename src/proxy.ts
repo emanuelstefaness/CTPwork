@@ -46,7 +46,7 @@ function comCsp(req: NextRequest, response?: NextResponse) {
 
 export default auth((req) => {
   const { pathname } = req.nextUrl;
-  const isPublic = PUBLIC_PATHS.some((p) => pathname.startsWith(p));
+  const isPublic = PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`));
   const isApiAuth = pathname.startsWith("/api/auth");
 
   if (!req.auth && !isPublic && !isApiAuth) {

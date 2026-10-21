@@ -6,13 +6,13 @@ import { useEffect, useId, useRef, useState } from "react";
 const LETRAS = "abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ";
 const DIGITOS = "23456789";
 
-/** Senha aleatória de 10 caracteres, sempre com letras e números. */
-export function gerarSenha() {
+/** Senha aleatória de 12 caracteres, sempre com letras e números. */
+function gerarSenha() {
   const todos = LETRAS + DIGITOS;
-  const sorteio = crypto.getRandomValues(new Uint32Array(10));
+  const sorteio = crypto.getRandomValues(new Uint32Array(12));
   const chars = Array.from(sorteio, (n) => todos[n % todos.length]);
-  chars[sorteio[0] % 10] = DIGITOS[sorteio[1] % DIGITOS.length];
-  if (!chars.some((c) => LETRAS.includes(c))) chars[(sorteio[0] + 1) % 10] = LETRAS[sorteio[2] % LETRAS.length];
+  chars[sorteio[0] % 12] = DIGITOS[sorteio[1] % DIGITOS.length];
+  if (!chars.some((c) => LETRAS.includes(c))) chars[(sorteio[0] + 1) % 12] = LETRAS[sorteio[2] % LETRAS.length];
   return chars.join("");
 }
 

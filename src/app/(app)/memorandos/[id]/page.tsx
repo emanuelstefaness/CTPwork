@@ -44,6 +44,8 @@ export default async function MemorandoDetailPage({ params }: { params: Promise<
     : {};
   const podeExecutar = memorando.acUserId === user.id || memorando.setores.some((s) => s.setorId === user.setorId);
   const podeCancelar = memorando.criadoPorId === user.id || pode(user, "memorando.gerenciar");
+  // Mesma regra de src/lib/actions/memorandos.ts: conclui quem executa ou quem emitiu.
+  const podeConcluir = podeExecutar || memorando.criadoPorId === user.id;
   const meuSignatario = memorando.fluxoAssinatura?.signatarios.find((s) => s.userId === user.id);
   const signatarios = memorando.fluxoAssinatura?.signatarios ?? [];
   const assinados = signatarios.filter((s) => s.status === "ASSINADO").length;
@@ -80,7 +82,7 @@ export default async function MemorandoDetailPage({ params }: { params: Promise<
                 <button className="primary-button">Iniciar execução</button>
               </FormSeguro>
             )}
-            {memorando.status === "EM_EXECUCAO" && (
+            {memorando.status === "EM_EXECUCAO" && podeConcluir && (
               <FormSeguro acao={concluirMemorandoSeguro}>
                 <input type="hidden" name="memorandoId" value={memorando.id} />
                 <button

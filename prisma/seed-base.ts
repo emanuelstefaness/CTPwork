@@ -29,7 +29,9 @@ async function main() {
     create: {
       nome: "Administrador",
       email,
-      passwordHash: await bcrypt.hash(senha, 10),
+      passwordHash: await bcrypt.hash(senha, 12),
+      // A senha veio de uma variável de ambiente que outras pessoas do projeto podem ver.
+      trocarSenha: true,
       tipo: "INTERNO",
       perfilInterno: "GESTOR",
       perfilId: "perfil-gestor",

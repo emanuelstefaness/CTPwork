@@ -70,7 +70,8 @@ Sem dados de exemplo:
 
 1. Abra o endereço que a Vercel mostra (ex.: `https://ctpwork.vercel.app`).
 2. Entre com o e-mail do administrador e a `ADMIN_SENHA`.
-3. Troque a senha em **Minha conta**.
+3. O sistema abre **Minha conta** e pede para criar uma senha própria: a `ADMIN_SENHA` fica visível
+   para quem tem acesso ao projeto na Vercel. Depois de trocar, entre de novo com a senha nova.
 4. Comece por **Cadastros › Municípios › Nova prefeitura (assistente)**.
 
 *(Opcional)* Em **Settings › Environment Variables**, adicione `APP_URL` com esse endereço. É o

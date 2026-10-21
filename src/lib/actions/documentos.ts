@@ -26,6 +26,8 @@ export type { Resultado } from "@/lib/resultado";
 
 const executar = capturar;
 
+/** Rascunho salvo (JSON do editor): bem acima de qualquer minuta real, abaixo do que pesaria no banco. */
+const TAMANHO_MAXIMO_DOCUMENTO = 5 * 1024 * 1024;
 
 async function carregarDocumento(documentoId: string) {
   const user = await requireSession();
@@ -59,6 +61,7 @@ export async function criarRascunho(etapaId: string): Promise<Resultado<{ id: st
     exigirInterno(user);
     const etapa = await prisma.etapaProjeto.findUnique({ where: { id: etapaId }, include: { projeto: true } });
     if (!etapa) throw new ErroUsuario("Etapa não encontrada.");
+    await assertVeProjeto(user, etapa.projetoId);
     if (!etapa.temRevisao) throw new ErroUsuario("Esta etapa não tem documento para revisão.");
 
     const existente = await prisma.documentoVersionado.findFirst({ where: { etapaId, enviadoEm: null } });
@@ -94,6 +97,7 @@ export async function salvarRascunho(
     const { user, documento } = await carregarDocumento(documentoId);
     exigirInterno(user);
     if (documento.enviadoEm) throw new ErroUsuario("Esta versão já foi enviada ao município e não pode mais ser alterada.");
+    if (conteudo.length > TAMANHO_MAXIMO_DOCUMENTO) throw new ErroUsuario("O documento ficou grande demais para salvar (limite de 5 MB de texto).");
 
     let bruto: unknown;
     try {
@@ -209,7 +213,7 @@ export async function criarAnotacao(input: {
 }): Promise<Resultado<{ id: string }>> {
   return executar(async () => {
     const { user, documento, etapa } = await carregarDocumento(input.documentoId);
-    const texto = input.texto?.trim() || null;
+    const texto = input.texto?.trim().slice(0, 4000) || null;
     if (!TIPOS.includes(input.tipo)) throw new ErroUsuario("Tipo de anotação inválido.");
     if ((input.tipo === "COMENTARIO" || input.tipo === "DISCORDO") && !texto) {
       throw new ErroUsuario(input.tipo === "DISCORDO" ? "Explique por que discorda deste trecho." : "Escreva o comentário.");
@@ -365,6 +369,7 @@ export async function decidirSugestoes(anotacaoIds: string[], decisao: DecisaoSu
       if (a.decisao) throw new ErroUsuario(`A sugestão sobre "${a.trecho.slice(0, 40)}…" já foi ${a.decisao === "ACEITA" ? "aceita" : "recusada"}.`);
       assertAcessoContratante(user, a.documento.etapa.projeto.contratanteId);
     }
+    for (const projetoId of new Set(anotacoes.map((a) => a.documento.etapa.projetoId))) await assertVeProjeto(user, projetoId);
     if (decisao === "ACEITA") {
       const etapaIds = [...new Set(anotacoes.map((a) => a.documento.etapaId))];
       const rascunhos = await prisma.documentoVersionado.count({ where: { etapaId: { in: etapaIds }, enviadoEm: null } });
@@ -441,7 +446,7 @@ export async function avaliarVersao(documentoId: string, decisao: "APROVADO" | "
     if (user.tipo !== "EXTERNO") throw new ErroUsuario("A avaliação da versão é feita pelo município.");
     exigir(user, "minuta.parecer");
     if (decisao !== "APROVADO" && decisao !== "REPROVADO") throw new ErroUsuario("Decisão inválida.");
-    const limpo = comentario.trim();
+    const limpo = comentario.trim().slice(0, 4000);
     if (decisao === "REPROVADO" && !limpo) throw new ErroUsuario("Descreva quais ajustes são necessários.");
     const leu = await prisma.visualizacaoDocumento.findUnique({ where: { documentoId_userId: { documentoId, userId: user.id } } });
     if (!leu) throw new ErroUsuario("Confirme a leitura do documento antes de avaliar.");

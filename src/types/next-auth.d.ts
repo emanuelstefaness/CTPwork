@@ -1,30 +1,21 @@
 import { DefaultSession } from "next-auth";
 
+// O cookie de sessão identifica a pessoa e a versão da sessão; o resto vem do banco a cada
+// requisição (src/lib/tenant.ts).
+
 declare module "next-auth" {
   interface Session {
-    user: {
-      id: string;
-      tipo: string;
-      perfilInterno: string | null;
-      setorId: string | null;
-      municipioId: string | null;
-    } & DefaultSession["user"];
+    user: { id: string; sessaoVersao: number } & DefaultSession["user"];
   }
 
   interface User {
-    tipo: string;
-    perfilInterno: string | null;
-    setorId: string | null;
-    municipioId: string | null;
+    sessaoVersao: number;
   }
 }
 
 declare module "next-auth/jwt" {
   interface JWT {
     id: string;
-    tipo: string;
-    perfilInterno: string | null;
-    setorId: string | null;
-    municipioId: string | null;
+    sessaoVersao: number;
   }
 }

@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { CTP, entrar, erroDoFormulario } from "./ajuda";
+import { CTP, abrirEntrada, criarPropriaSenha, entrar, erroDoFormulario } from "./ajuda";
 
 /**
  * Prefeitura nova do zero, pelo assistente: município + acessos (e-mail e senha definidos pelo
@@ -8,7 +8,8 @@ import { CTP, entrar, erroDoFormulario } from "./ajuda";
 test.describe.configure({ mode: "serial" });
 
 const PREFEITURA = "Prefeitura de Clevelândia";
-const PREFEITO = { nome: "Carlos Prefeito", email: "carlos@clevelandia.pr.gov.br", senha: "Clevelandia2026" };
+// `senha` é a que o gestor define no cadastro; `propria`, a que o prefeito cria no primeiro acesso.
+const PREFEITO = { nome: "Carlos Prefeito", email: "carlos@clevelandia.pr.gov.br", senha: "Clevelandia2026", propria: "MinhaSenha2026" };
 const SECRETARIA = { nome: "Beatriz Secretária", email: "beatriz@clevelandia.pr.gov.br" };
 
 test("assistente cadastra a prefeitura, os acessos com senha e os fluxos exclusivos de uma vez", async ({ page }) => {
@@ -29,11 +30,11 @@ test("assistente cadastra a prefeitura, os acessos com senha e os fluxos exclusi
 
   // Sem senha para a secretária: o servidor recusa e nada é criado.
   await page.getByRole("button", { name: "Cadastrar prefeitura" }).click();
-  await expect(erroDoFormulario(page)).toContainText(`A senha de ${SECRETARIA.nome} precisa ter ao menos 8 caracteres`);
+  await expect(erroDoFormulario(page)).toContainText(`Senha de ${SECRETARIA.nome}: A senha precisa ter pelo menos 8 caracteres`);
 
   // "Gerar" preenche uma senha forte, visível para o gestor repassar.
   await page.getByRole("button", { name: "Gerar senha do usuário 2" }).click();
-  await expect(page.getByLabel("Senha do usuário 2", { exact: true })).toHaveValue(/^(?=.*\d)(?=.*[a-zA-Z])[a-zA-Z\d]{10}$/);
+  await expect(page.getByLabel("Senha do usuário 2", { exact: true })).toHaveValue(/^(?=.*\d)(?=.*[a-zA-Z])[a-zA-Z\d]{12}$/);
   await page.getByRole("button", { name: "Cadastrar prefeitura" }).click();
 
   const resumo = page.getByRole("status").filter({ hasText: `${PREFEITURA} cadastrada.` });
@@ -44,8 +45,21 @@ test("assistente cadastra a prefeitura, os acessos com senha e os fluxos exclusi
   await expect(resumo).toContainText("Tipo de projeto exclusivo:");
 });
 
-test("o prefeito entra com a senha definida e vê só a própria prefeitura", async ({ page }) => {
+test("no primeiro acesso o prefeito cria a própria senha e depois vê só a própria prefeitura", async ({ page }) => {
   await entrar(page, PREFEITO.email, PREFEITO.senha);
+  // Até criar a própria senha, qualquer tela leva de volta a "Minha conta".
+  await page.goto("/projetos");
+  await expect(page).toHaveURL(/\/conta/);
+  await criarPropriaSenha(page, PREFEITO.email, PREFEITO.senha, PREFEITO.propria);
+
+  // A senha definida pelo gestor deixou de valer.
+  await abrirEntrada(page);
+  await page.getByLabel("E-mail").fill(PREFEITO.email);
+  await page.getByLabel("Senha", { exact: true }).fill(PREFEITO.senha);
+  await page.getByRole("button", { name: "Entrar" }).click();
+  await expect(erroDoFormulario(page)).toHaveText("E-mail ou senha incorretos.");
+
+  await entrar(page, PREFEITO.email, PREFEITO.propria);
   await page.getByRole("button", { name: "Abrir menu" }).click();
   await expect(page.locator("aside nav").getByRole("link", { name: "Meus projetos" })).toBeVisible();
 
@@ -75,7 +89,7 @@ test("tipo de contrato exclusivo só aparece para a própria prefeitura", async 
   await expect(page.getByText("Tipo de contrato: Padrão — Clevelândia")).toBeVisible();
 
   // E o prefeito vê o contrato da prefeitura dele.
-  await entrar(page, PREFEITO.email, PREFEITO.senha);
+  await entrar(page, PREFEITO.email, PREFEITO.propria);
   await page.goto("/contratos");
   await expect(page.getByText("Revisão do Plano Diretor de Clevelândia")).toBeVisible();
 });
@@ -100,6 +114,9 @@ test("cadastro avulso exige senha, e o gestor pode trocar a senha depois", async
   await editar.getByRole("button", { name: "Salvar alterações" }).click();
   await expect(editar).toHaveCount(0);
 
+  // Senha nova dada pelo gestor também precisa ser trocada pela pessoa no acesso seguinte.
   await entrar(page, "otavio@clevelandia.pr.gov.br", "NovaSenha2027");
+  await criarPropriaSenha(page, "otavio@clevelandia.pr.gov.br", "NovaSenha2027", "Otavio2027ok");
+  await page.goto("/projetos");
   await expect(page).toHaveURL(/\/projetos/);
 });

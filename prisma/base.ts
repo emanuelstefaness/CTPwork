@@ -86,7 +86,7 @@ async function semearPerfisEFluxoPadrao(prisma: PrismaClient) {
   });
 }
 
-export const SETORES_BASE = ["Administrativo", "Comunicação", "Jurídico", "Técnico"];
+const SETORES_BASE = ["Administrativo", "Comunicação", "Jurídico", "Técnico"];
 
 export async function semearConfiguracaoBase(prisma: PrismaClient) {
   await semearPerfisEFluxoPadrao(prisma);

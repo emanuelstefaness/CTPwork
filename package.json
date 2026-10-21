@@ -29,41 +29,40 @@
     "@tiptap/extension-table": "^3.31.3",
     "@tiptap/extension-text-align": "^3.31.3",
     "@tiptap/extensions": "^3.31.3",
-    "@tiptap/html": "^3.31.3",
     "@tiptap/pm": "^3.31.3",
     "@tiptap/react": "^3.31.3",
     "@tiptap/starter-kit": "^3.31.3",
     "@vercel/blob": "^2.8.0",
     "bcryptjs": "^3.0.3",
-    "date-fns": "^4.4.0",
     "diff": "^9.0.0",
     "docx": "^9.7.2",
     "mammoth": "^1.12.3",
-    "next": "16.3.5",
+    "next": "^16.4.2",
     "next-auth": "^5.0.0-beta.32",
     "nodemailer": "^10.0.10",
     "prisma": "^5.22.0",
     "react": "19.2.8",
     "react-dom": "19.2.8",
-    "recharts": "^3.10.1",
-    "zod": "^4.6.5"
+    "recharts": "^3.10.1"
   },
   "devDependencies": {
     "@playwright/test": "^1.63.0",
     "@tailwindcss/postcss": "^4",
-    "@types/bcryptjs": "^2.4.6",
     "@types/node": "^20",
     "@types/nodemailer": "^8.0.2",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
-    "eslint-config-next": "16.3.5",
+    "eslint-config-next": "^16.4.2",
     "tailwindcss": "^4",
     "tsx": "^4.23.13",
     "typescript": "^5"
   },
   "overrides": {
-    "nodemailer": "$nodemailer"
+    "nodemailer": "$nodemailer",
+    "mammoth": {
+      "argparse": "^2.0.1"
+    }
   },
-  "//overrides": "nodemailer 10 corrige vulnerabilidades da 8.x; o Auth.js só a declara como dependência opcional (login por e-mail, que não usamos)."
+  "//overrides": "nodemailer 10 corrige vulnerabilidades da 8.x; o Auth.js só a declara como dependência opcional (login por e-mail, que não usamos). mammoth: argparse 2 não depende do sprintf-js vulnerável (o argparse só serve à linha de comando do mammoth, que não usamos)."
 }

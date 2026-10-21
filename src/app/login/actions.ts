@@ -1,35 +1,35 @@
 "use server";
 
-import { signIn } from "@/lib/auth";
 import { AuthError } from "next-auth";
-import { bloqueado, limpar, registrarFalha } from "@/lib/limite-tentativas";
+import { signIn } from "@/lib/auth";
 
-const MAX_FALHAS = 5;
-const JANELA_MS = 15 * 60 * 1000;
+/** Destino depois do login: só caminhos internos do sistema ("//outro-site" não conta). */
+function destinoSeguro(valor: string) {
+  return valor.startsWith("/") && !valor.startsWith("//") && !valor.startsWith("/\\") ? valor : "/";
+}
 
 export async function loginAction(
   _prevState: { erro?: string; email?: string } | undefined,
   formData: FormData
 ): Promise<{ erro?: string; email?: string }> {
-  const email = String(formData.get("email") ?? "").trim();
+  const email = String(formData.get("email") ?? "").trim().slice(0, 254);
   const password = String(formData.get("password") ?? "");
-  const callbackUrl = String(formData.get("callbackUrl") ?? "/");
-  const chave = `login:${email.toLowerCase()}`;
-
-  const espera = bloqueado(chave, MAX_FALHAS, JANELA_MS);
-  if (espera > 0) {
-    return { email, erro: `Muitas tentativas sem sucesso. Tente de novo em ${Math.ceil(espera / 60000)} minuto(s) ou use "Esqueci minha senha".` };
-  }
+  const callbackUrl = destinoSeguro(String(formData.get("callbackUrl") ?? "/"));
 
   try {
     await signIn("credentials", { email, password, redirectTo: callbackUrl });
     return {};
   } catch (err) {
     if (err instanceof AuthError) {
-      registrarFalha(chave, JANELA_MS);
-      return { email, erro: "E-mail ou senha incorretos." };
+      // O limite de tentativas é aplicado em src/lib/auth.ts (vale também para quem chama a API direto).
+      const bloqueado = "code" in err && err.code === "bloqueado";
+      return {
+        email,
+        erro: bloqueado
+          ? 'Muitas tentativas sem sucesso. Aguarde 15 minutos e tente de novo, ou use "Esqueci minha senha".'
+          : "E-mail ou senha incorretos.",
+      };
     }
-    limpar(chave); // redirect de sucesso passa por aqui como exceção do Next
-    throw err;
+    throw err; // o redirect de sucesso chega aqui como exceção do Next
   }
 }

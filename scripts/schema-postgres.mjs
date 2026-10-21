@@ -7,7 +7,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
-export const SCHEMA_POSTGRES = "prisma/postgres/schema.prisma";
+const SCHEMA_POSTGRES = "prisma/postgres/schema.prisma";
 
 export function gerarSchemaPostgres(raiz = process.cwd()) {
   const original = readFileSync(path.join(raiz, "prisma", "schema.prisma"), "utf8");

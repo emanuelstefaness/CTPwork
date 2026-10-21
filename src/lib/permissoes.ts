@@ -33,8 +33,8 @@ export const permissoesDoTipo = (tipo: TipoPerfil) =>
   (Object.keys(PERMISSOES) as Permissao[]).filter((p) => PERMISSOES[p].tipo === tipo);
 
 /** Perfis de fábrica (criados pela migração) — também são o padrão de quem ainda não tem perfil. */
-export const PERFIL_GESTOR = "perfil-gestor";
-export const PERFIL_COLABORADOR = "perfil-colaborador";
+const PERFIL_GESTOR = "perfil-gestor";
+const PERFIL_COLABORADOR = "perfil-colaborador";
 export const PERFIL_MUNICIPIO = "perfil-municipio";
 
 export function perfilPadrao(user: { tipo: string; perfilInterno?: string | null }) {

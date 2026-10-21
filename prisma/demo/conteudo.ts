@@ -118,16 +118,6 @@ export function blocosDeDoc(doc: DocBase): Bloco[] {
   ];
 }
 
-const ROTULO_ETAPA_CONTRATO: Record<string, string> = {
-  PEDIDO_ORCAMENTO: "Pedido de orçamento",
-  EMISSAO_ORCAMENTO: "Emissão de orçamento",
-  APROVACAO_ORCAMENTO: "Aprovação de orçamento",
-  DOCUMENTOS_CONTRATACAO: "Documentos para contratação",
-  TERMO_REFERENCIA_MINUTA: "Minuta do contrato e termo de referência",
-  TERMO_REFERENCIA_ASSINADO: "Contrato e termo de referência assinados",
-};
-export { ROTULO_ETAPA_CONTRATO };
-
 export function docContrato(tipo: "pedido" | "orcamento" | "certidoes" | "minuta" | "assinado", codigo: string, objeto: string, municipio: string, valor: string): DocBase {
   switch (tipo) {
     case "pedido":

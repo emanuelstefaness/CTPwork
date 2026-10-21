@@ -9,6 +9,6 @@ import path from "path";
  * para o Vercel Blob (src/lib/arquivos.ts) e os e-mails sem SMTP caem lá, sem derrubar a ação.
  */
 const pastaPadrao = () => (process.env.VERCEL ? path.join(os.tmpdir(), "ctp-work") : path.join(process.cwd(), "storage"));
-export const pastaDados = () => process.env.STORAGE_DIR ?? pastaPadrao();
+const pastaDados = () => process.env.STORAGE_DIR ?? pastaPadrao();
 export const pastaUploads = () => path.join(pastaDados(), "uploads");
 export const pastaEmails = () => path.join(pastaDados(), "emails");

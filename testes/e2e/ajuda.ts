@@ -15,11 +15,10 @@ export const MUNICIPIO = {
 };
 
 /**
- * Entra com a conta. Se já houver alguém logado, sai antes: primeiro sai da página (senão uma
- * requisição ainda em andamento devolve o cookie de sessão logo depois de apagado) e depois
- * limpa os cookies.
+ * Abre a tela de entrada sem ninguém logado: primeiro sai da página (senão uma requisição ainda
+ * em andamento devolve o cookie de sessão logo depois de apagado) e depois limpa os cookies.
  */
-export async function entrar(page: Page, email: string, senha = SENHA) {
+export async function abrirEntrada(page: Page) {
   // Às vezes uma resposta atrasada da página anterior ainda regrava o cookie depois da limpeza:
   // se /login redirecionar para dentro do sistema, limpa de novo e tenta outra vez.
   for (let tentativa = 0; tentativa < 4; tentativa++) {
@@ -30,10 +29,32 @@ export async function entrar(page: Page, email: string, senha = SENHA) {
     await page.waitForTimeout(500);
   }
   await expect(page).toHaveURL(/\/login/);
+}
+
+/** Entra com a conta (saindo antes de quem estiver logado). */
+export async function entrar(page: Page, email: string, senha = SENHA) {
+  await abrirEntrada(page);
   await page.getByLabel("E-mail").fill(email);
   await page.getByLabel("Senha", { exact: true }).fill(senha);
   await page.getByRole("button", { name: "Entrar" }).click();
   await expect(page).not.toHaveURL(/\/login/);
+}
+
+/**
+ * Primeiro acesso de quem recebeu a senha do gestor: o sistema leva a "Minha conta" e só libera o
+ * resto depois que a pessoa cria a própria senha. Trocada a senha, ela volta à entrada e entra
+ * de novo com a senha nova.
+ */
+export async function criarPropriaSenha(page: Page, email: string, senhaRecebida: string, novaSenha: string) {
+  await expect(page).toHaveURL(/\/conta/);
+  await expect(page.getByRole("status").filter({ hasText: "Crie sua própria senha" })).toBeVisible();
+  await page.getByLabel("Senha atual", { exact: true }).fill(senhaRecebida);
+  await page.getByLabel("Nova senha", { exact: true }).fill(novaSenha);
+  await page.getByLabel("Repita a nova senha", { exact: true }).fill(novaSenha);
+  await page.getByRole("button", { name: "Alterar senha" }).click();
+  await expect(page).toHaveURL(/\/login\?senha=alterada/);
+  await expect(page.getByRole("status")).toContainText("Senha alterada");
+  await entrar(page, email, novaSenha);
 }
 
 /** Mensagem de erro de um formulário (ignora o anunciador de rotas do Next, que também é role=alert). */
@@ -80,7 +101,7 @@ async function selecionarUmaVez(page: Page, trecho: string) {
 }
 
 /** E-mails que o sistema "enviou" (sem SMTP nos testes, eles são gravados em storage-teste/emails). */
-export function emailsPara(destinatario: string): string[] {
+function emailsPara(destinatario: string): string[] {
   const pasta = path.join(process.cwd(), "storage-teste", "emails");
   let arquivos: string[] = [];
   try {

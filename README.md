@@ -117,8 +117,7 @@ Nas etapas com revisão, o documento é escrito e revisado **dentro do sistema**
   comentários viram comentários nativos do Word, com respostas encadeadas) e **imprimir/PDF**.
 
 Anotações ficam fora do texto (`AnotacaoDocumento`), ancoradas por posição + trecho citado; o servidor
-confere a âncora com o mesmo esquema do editor (`src/lib/editor`). Bancos criados antes do editor:
-`npx tsx prisma/migrar-editor.ts` converte as versões antigas (seções/artigos) para o editor.
+confere a âncora com o mesmo esquema do editor (`src/lib/editor`).
 
 ## Conversas com o município
 
@@ -142,12 +141,21 @@ existindo para o assunto da etapa.
   (`src/lib/prisma.ts`) agenda o despacho sempre que uma `Notificacao` é gravada, e
   `src/lib/email/despacho.ts` junta o que chegou para a mesma pessoa em poucos segundos num e-mail só.
   Cada aviso sai uma única vez (`emailStatus`); avisos com mais de 24 h sem envio são descartados.
-  O despacho roda dentro do servidor Node (`next start`); numa hospedagem serverless, trocar por
-  uma fila/cron chamando `despacharEmails()`.
-- **Minha conta** (clicar no nome): trocar a senha e ligar/desligar os avisos por e-mail.
+  O despacho roda com `after()` do Next: a função continua viva depois da resposta, também na Vercel.
+- **Minha conta** (clicar no nome): trocar a senha e ligar/desligar os avisos por e-mail. Trocar a
+  senha encerra todas as sessões abertas, inclusive a atual, e a pessoa entra de novo.
 - **Esqueci minha senha**: link de uso único válido por 1 hora (só o hash fica no banco); a
   resposta é a mesma exista ou não a conta.
-- **Login**: 5 senhas erradas seguidas bloqueiam aquele e-mail por 15 minutos.
+- **Login**: 5 senhas erradas seguidas bloqueiam aquele e-mail por 15 minutos, e 30 falhas do mesmo IP
+  bloqueiam o IP. As falhas ficam no banco (`TentativaAcesso`), valendo entre as várias instâncias da
+  hospedagem, e a checagem fica dentro do `authorize` (vale também para quem chama a API do Auth.js
+  direto). Com ou sem conta, o login leva o mesmo tempo (não revela quais e-mails existem).
+- **Senha definida pelo gestor** (cadastro ou "nova senha" em Editar): no próximo acesso a pessoa só
+  vê "Minha conta" até criar a própria senha (`User.trocarSenha`).
+- **Sessão**: expira após 8 horas sem uso. Trocar ou redefinir a senha e desativar o acesso derrubam
+  na hora as sessões abertas (`User.sessaoVersao`, conferida no banco a cada requisição).
+- **Senhas**: mínimo de 8 caracteres com letras e números, máximo de 72 (limite do bcrypt), hash
+  bcrypt custo 12 (`src/lib/senha.ts`).
 - **Desativar acesso** (Cadastros › Usuários, só gestor): a pessoa não entra mais e é desconectada
   no próximo clique; sai das listas de escolha e dos avisos, mas o histórico (comentários,
   assinaturas, mensagens, auditoria) fica. Reativável. Ninguém desativa a si mesmo nem o último gestor.
@@ -227,7 +235,13 @@ função seguem o tipo **Padrão** (as 6 etapas originais). Lógica comum em `sr
   'strict-dynamic'`): só roda o script que o próprio Next gerou naquela resposta. Estilos inline
   seguem liberados (editor, gráficos e grifos usam `style`). Por causa do nonce, todas as páginas
   são geradas por requisição (`connection()` no layout raiz).
-- Anexos de até **20 MB** (o Next limita server actions a 1 MB por padrão — ver `next.config.ts`).
+- Anexos de até **20 MB** (4 MB na Vercel). O tipo do arquivo é conferido pelo **conteúdo** (assinatura
+  dos primeiros bytes) e pela extensão, nunca pelo que o navegador declara (`src/lib/storage.ts`):
+  só PDF, Word, Excel e PNG/JPG. PDF e imagens abrem no navegador; Word e Excel sempre baixam.
+- Toda server action confere sessão, permissão do perfil e alcance (município e "vê só onde
+  participa") antes de ler ou gravar; ids vindos de formulário (responsável, signatários, pessoas
+  de memorando) são conferidos contra o banco. Signatários sempre nascem pendentes.
+- Links do editor: só `http(s)`, `mailto`, `tel` e âncoras; o resto é removido no servidor antes de gravar.
 
 ## Testes automatizados
 

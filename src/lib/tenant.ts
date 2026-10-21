@@ -1,4 +1,5 @@
 import { cache } from "react";
+import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { TIPO_USUARIO } from "@/lib/constants";
@@ -12,12 +13,8 @@ export class AcessoNegadoError extends Error {
 }
 
 /**
- * O cookie de sessão (JWT) guarda o id do usuário no momento do login e nunca é revalidado
- * contra o banco pelo NextAuth. Se o usuário por trás daquele id deixar de existir (ex.: banco
- * resetado/reaplicado durante o desenvolvimento), qualquer ação de escrita que use esse id como
- * chave estrangeira (autorId, criadoPorId, etc.) quebra com erro de foreign key do Prisma em vez
- * de pedir login novamente. SessaoInvalidaError existe para dar uma mensagem clara + saída (login)
- * nesse caso, em vez de vazar o erro cru do banco para a tela.
+ * Cookie de sessão que não vale mais: o usuário não existe, foi desativado ou trocou a senha
+ * (sessaoVersao). Em vez de um erro cru do banco, a pessoa recebe a mensagem e volta ao login.
  */
 export class SessaoInvalidaError extends Error {
   constructor(msg = "Sua sessão expirou ou não é mais válida. Faça login novamente.") {
@@ -34,9 +31,11 @@ export type SessaoAtual = {
   perfilInterno: string | null;
   setorId: string | null;
   municipioId: string | null;
+  /** Senha definida por outra pessoa: até trocar, só a tela "Minha conta" funciona. */
+  trocarSenha: boolean;
 } & Acesso;
 
-type Carregada = { sessao: SessaoAtual } | { invalida: "inexistente" | "desativado" } | null;
+type Carregada = { sessao: SessaoAtual } | { invalida: "inexistente" | "desativado" | "encerrada" } | null;
 
 /**
  * Sessão da requisição, lida do banco a cada request (uma vez só, graças ao `cache`): perfil,
@@ -49,11 +48,14 @@ const carregarSessao = cache(async (): Promise<Carregada> => {
     where: { id: session.user.id },
     select: {
       id: true, nome: true, email: true, tipo: true, perfilInterno: true, setorId: true, municipioId: true, ativo: true,
+      sessaoVersao: true, trocarSenha: true,
       perfil: { select: { id: true, nome: true, tipo: true, permissoes: true, somenteParticipa: true } },
     },
   });
   if (!u) return { invalida: "inexistente" };
   if (!u.ativo) return { invalida: "desativado" };
+  // Senha trocada (ou acesso reativado) depois do login: esta sessão foi encerrada.
+  if (u.sessaoVersao !== session.user.sessaoVersao) return { invalida: "encerrada" };
 
   // Sem perfil (ou com perfil de outro tipo): cai no perfil de fábrica do seu tipo.
   const perfil = u.perfil && u.perfil.tipo === u.tipo
@@ -69,6 +71,7 @@ const carregarSessao = cache(async (): Promise<Carregada> => {
       perfilInterno: u.perfilInterno,
       setorId: u.setorId,
       municipioId: u.municipioId,
+      trocarSenha: u.trocarSenha,
       perfilId: perfil?.id ?? perfilPadrao(u),
       perfilNome: perfil?.nome ?? (u.tipo === "EXTERNO" ? "Município" : "Colaborador"),
       permissoes: lerPermissoes(perfil?.permissoes, u.tipo),
@@ -84,13 +87,18 @@ export async function sessaoValidaOuNula(): Promise<SessaoAtual | null> {
   return r && "sessao" in r ? r.sessao : null;
 }
 
-/** Exige sessão autenticada e válida (usuário do cookie existe e está ativo). */
-export async function requireSession(): Promise<SessaoAtual> {
+/**
+ * Exige sessão autenticada e válida (usuário do cookie existe, está ativo e não trocou a senha
+ * depois do login). Quem ainda precisa trocar a senha é levado a "Minha conta" — de qualquer
+ * página, ação ou download —, a não ser onde `permitirTrocaPendente`.
+ */
+export async function requireSession(opcoes: { permitirTrocaPendente?: boolean } = {}): Promise<SessaoAtual> {
   const r = await carregarSessao();
   if (!r) throw new AcessoNegadoError("Não autenticado");
   if ("invalida" in r) {
     throw new SessaoInvalidaError(r.invalida === "desativado" ? "Seu acesso foi desativado. Fale com a equipe do CTP." : undefined);
   }
+  if (r.sessao.trocarSenha && !opcoes.permitirTrocaPendente) redirect("/conta");
   return r.sessao;
 }
 

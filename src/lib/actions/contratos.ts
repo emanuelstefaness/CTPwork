@@ -3,7 +3,7 @@
 import { prisma } from "@/lib/prisma";
 import { exigir, exigirPermissao, requireSession, assertAcessoContratante, AcessoNegadoError } from "@/lib/tenant";
 import { registrarAuditoria } from "@/lib/audit";
-import { gerarCodigoContrato, gerarCodigoProjeto } from "@/lib/codigos";
+import { comCodigoUnico, gerarCodigoContrato, gerarCodigoProjeto } from "@/lib/codigos";
 import { getSignatureProvider } from "@/lib/signature/provider";
 import { FLUXO_PADRAO_ID, garantirEtapasDosContratos, podeAvancarEtapa, progressoDoContrato } from "@/lib/fluxo-contrato";
 import { revalidatePath } from "next/cache";
@@ -12,21 +12,32 @@ import { lerDocumentosPadrao } from "@/lib/documentos-padrao";
 import { documentosEmAberto, pedirDocumentosPadrao } from "@/lib/documentos-contrato";
 import { assertVeContrato } from "@/lib/visibilidade";
 import { salvarAnexo } from "@/lib/storage";
+import { ipDaRequisicao } from "@/lib/ip";
 import { redirect } from "next/navigation";
+
+/** Pessoa do CTP, ativa, escolhida num formulário (responsável, signatário): nunca um id qualquer. */
+async function internoAtivo(id: string, papel: string) {
+  const u = await prisma.user.findFirst({ where: { id, tipo: "INTERNO", ativo: true }, select: { id: true } });
+  if (!u) throw new Error(`Escolha ${papel} entre as pessoas ativas do CTP.`);
+  return u.id;
+}
 
 export async function criarContrato(formData: FormData) {
   const user = await exigirPermissao("contrato.gerenciar");
 
-  const objeto = String(formData.get("objeto") ?? "").trim();
+  const objeto = String(formData.get("objeto") ?? "").trim().slice(0, 500);
   const contratanteId = String(formData.get("contratanteId") ?? "");
-  const responsavelId = String(formData.get("responsavelId") ?? user.id);
   const tags = String(formData.get("tags") ?? "")
     .split(",")
-    .map((t) => t.trim())
-    .filter(Boolean);
+    .map((t) => t.trim().slice(0, 40))
+    .filter(Boolean)
+    .slice(0, 10);
 
   if (!objeto) throw new Error("Objeto do contrato é obrigatório.");
-  if (!contratanteId) throw new Error("Contratante é obrigatório.");
+  if (!contratanteId || !(await prisma.municipio.findUnique({ where: { id: contratanteId }, select: { id: true } }))) {
+    throw new Error("Escolha o município contratante.");
+  }
+  const responsavelId = await internoAtivo(String(formData.get("responsavelId") || user.id), "o responsável");
 
   // Tipo de contrato: as etapas do fluxo escolhido são copiadas para o contrato.
   const fluxoId = String(formData.get("fluxoId") ?? "") || FLUXO_PADRAO_ID;
@@ -35,9 +46,7 @@ export async function criarContrato(formData: FormData) {
   if (fluxo.municipioId && fluxo.municipioId !== contratanteId) throw new Error(`O tipo "${fluxo.nome}" é exclusivo de outra prefeitura.`);
   if (fluxo.etapas.length < 2) throw new Error(`O tipo "${fluxo.nome}" precisa de pelo menos 2 etapas. Complete-o em Cadastros › Fluxos de contrato.`);
 
-  const codigo = await gerarCodigoContrato();
-
-  const contrato = await prisma.contrato.create({
+  const contrato = await comCodigoUnico(gerarCodigoContrato, (codigo) => prisma.contrato.create({
     data: {
       codigo,
       objeto,
@@ -59,7 +68,7 @@ export async function criarContrato(formData: FormData) {
         })),
       },
     },
-  });
+  }));
 
   // Documentos que o tipo de contrato pede em cada etapa (Cadastros › Fluxos de contrato).
   await pedirDocumentosPadrao(contrato.id, fluxo.etapas);
@@ -86,6 +95,7 @@ async function contratoComEtapas(contratoId: string) {
  */
 export async function avancarEtapaContrato(contratoId: string) {
   const user = await exigirPermissao("contrato.gerenciar");
+  await assertVeContrato(user, contratoId);
   const { contrato, atual, proxima } = await contratoComEtapas(contratoId);
   if (!proxima) throw new Error("O contrato já está na última etapa do fluxo.");
   if (atual.concluidaPelaPrefeitura) throw new AcessoNegadoError(`A etapa "${atual.nome}" é concluída pela prefeitura.`);
@@ -169,42 +179,46 @@ export async function pedirRevisaoEtapaContrato(formData: FormData) {
   revalidatePath(`/contratos/${contratoId}`);
 }
 
-export async function criarFluxoAssinaturaContrato(contratoId: string, signatarios: { userId?: string; nomeExterno?: string; tipo: string }[]) {
+/**
+ * Abre a coleta de assinaturas: pessoas do CTP (escolhidas entre as ativas) e, pelo município,
+ * quem tiver a permissão de assinar. Os signatários nascem sempre pendentes; nada do que vem do
+ * navegador além dos ids e do nome é gravado.
+ */
+export async function iniciarAssinaturaContrato(formData: FormData) {
   const user = await exigirPermissao("contrato.gerenciar");
+  const contratoId = String(formData.get("contratoId"));
+  await assertVeContrato(user, contratoId);
+  const internoIds = [...new Set(formData.getAll("internoIds").map(String).filter(Boolean))].slice(0, 20);
+  const nomeExterno = String(formData.get("nomeExterno") ?? "").trim().slice(0, 120);
+  if (internoIds.length === 0 && !nomeExterno) throw new Error("Informe ao menos um signatário.");
+
+  const internos = await prisma.user.findMany({ where: { id: { in: internoIds }, tipo: "INTERNO", ativo: true }, select: { id: true } });
+  if (internos.length !== internoIds.length) throw new Error("Escolha os signatários do CTP entre as pessoas ativas.");
+
   const { contrato, atual } = await contratoComEtapas(contratoId);
   if (!atual.exigeAssinaturas) throw new Error("A coleta de assinaturas é aberta na etapa do fluxo que exige assinaturas.");
   if (contrato.fluxoAssinatura) throw new Error("Este contrato já tem um fluxo de assinatura aberto.");
   await prisma.fluxoAssinatura.create({
     data: {
       contratoId,
-      signatarios: { create: signatarios },
+      signatarios: {
+        create: [
+          ...internos.map((u) => ({ userId: u.id, tipo: "INTERNO" })),
+          ...(nomeExterno ? [{ nomeExterno, tipo: "EXTERNO" }] : []),
+        ],
+      },
     },
   });
   await registrarAuditoria({ userId: user.id, acao: "CRIAR_FLUXO_ASSINATURA", entidadeTipo: "Contrato", entidadeId: contratoId });
   revalidatePath(`/contratos/${contratoId}`);
 }
 
-export async function iniciarAssinaturaContrato(formData: FormData) {
-  const contratoId = String(formData.get("contratoId"));
-  const internoIds = formData.getAll("internoIds").map(String);
-  const nomeExterno = String(formData.get("nomeExterno") ?? "").trim();
-
-  const signatarios: { userId?: string; nomeExterno?: string; tipo: string }[] = internoIds.map((id) => ({
-    userId: id,
-    tipo: "INTERNO",
-  }));
-  if (nomeExterno) signatarios.push({ nomeExterno, tipo: "EXTERNO" });
-
-  if (signatarios.length === 0) throw new Error("Informe ao menos um signatário.");
-
-  await criarFluxoAssinaturaContrato(contratoId, signatarios);
-}
-
-/** Assinatura por usuário externo do município (só o vinculado ao contratante). */
+/** Assinatura de quem foi indicado no fluxo; pelo município, quem tem a permissão de assinar. */
 export async function assinarContrato(contratoId: string) {
   const user = await requireSession();
   const contrato = await prisma.contrato.findUniqueOrThrow({ where: { id: contratoId } });
   assertAcessoContratante(user, contrato.contratanteId);
+  await assertVeContrato(user, contratoId);
   // Pela prefeitura, só quem tem a permissão assina (ex.: o prefeito).
   if (user.tipo === "EXTERNO") exigir(user, "contrato.assinar");
 
@@ -213,22 +227,27 @@ export async function assinarContrato(contratoId: string) {
     include: { signatarios: true },
   });
   if (!fluxo) throw new Error("Este contrato não tem fluxo de assinatura aberto.");
+  if (fluxo.concluido) throw new Error("Todas as assinaturas deste contrato já foram coletadas.");
 
   const signatario =
     user.tipo === "EXTERNO"
       ? fluxo.signatarios.find((s) => s.tipo === "EXTERNO" && s.status === "PENDENTE")
-      : fluxo.signatarios.find((s) => s.userId === user.id);
+      : fluxo.signatarios.find((s) => s.userId === user.id && s.status === "PENDENTE");
   if (!signatario) throw new Error("Você não é signatário pendente deste contrato.");
 
   const provider = getSignatureProvider(signatario.provider);
-  const requestHeaders = await headers();
-  const ip = requestHeaders.get("x-forwarded-for")?.split(",")[0]?.trim() || requestHeaders.get("x-real-ip") || "indisponível";
-  const resultado = await provider.assinar({ signatarioId: signatario.id, ip });
+  const resultado = await provider.assinar({ signatarioId: signatario.id, ip: ipDaRequisicao(await headers()) });
 
-  await prisma.signatario.update({
-    where: { id: signatario.id },
-    data: { status: "ASSINADO", assinadoEm: resultado.assinadoEm, ipAssinatura: resultado.ipAssinatura },
+  // Só assina se ainda estiver pendente (dois cliques ao mesmo tempo não assinam duas vezes). Pela
+  // prefeitura, grava também QUEM assinou em nome do município.
+  const assinou = await prisma.signatario.updateMany({
+    where: { id: signatario.id, status: "PENDENTE" },
+    data: {
+      status: "ASSINADO", assinadoEm: resultado.assinadoEm, ipAssinatura: resultado.ipAssinatura,
+      ...(user.tipo === "EXTERNO" ? { userId: user.id } : {}),
+    },
   });
+  if (assinou.count !== 1) throw new Error("Esta assinatura já foi registrada.");
 
   const restantes = await prisma.signatario.count({ where: { fluxoId: fluxo.id, status: "PENDENTE" } });
   if (restantes === 0) {
@@ -240,7 +259,7 @@ export async function assinarContrato(contratoId: string) {
     acao: "ASSINAR",
     entidadeTipo: "Contrato",
     entidadeId: contratoId,
-    detalhe: `ip=${resultado.ipAssinatura}`,
+    detalhe: `${signatario.nomeExterno ? `em nome de ${signatario.nomeExterno} · ` : ""}ip=${resultado.ipAssinatura}`,
   });
   revalidatePath(`/contratos/${contratoId}`);
 }
@@ -252,9 +271,10 @@ export async function assinarContrato(contratoId: string) {
 export async function criarProjetoDoContrato(formData: FormData) {
   const user = await exigirPermissao("contrato.gerenciar");
   const contratoId = String(formData.get("contratoId"));
-  const tipo = String(formData.get("tipo"));
-  const dataVigencia = String(formData.get("dataVigencia"));
-  const responsavelId = String(formData.get("responsavelId") ?? user.id);
+  await assertVeContrato(user, contratoId);
+  const tipo = String(formData.get("tipo") ?? "");
+  const dataVigencia = new Date(String(formData.get("dataVigencia") ?? ""));
+  const responsavelId = await internoAtivo(String(formData.get("responsavelId") || user.id), "o responsável");
 
   const { contrato: base, atual, temEtapaDeAssinatura } = await contratoComEtapas(contratoId);
   const contrato = { ...base, anexos: await prisma.anexo.findMany({ where: { contratoId } }) };
@@ -265,7 +285,7 @@ export async function criarProjetoDoContrato(formData: FormData) {
   if (temEtapaDeAssinatura && !contrato.fluxoAssinatura?.concluido) {
     throw new Error("O contrato precisa estar com todas as assinaturas coletadas para criar o projeto.");
   }
-  if (!tipo || !dataVigencia) throw new Error("Tipo do projeto e data de vigência são obrigatórios.");
+  if (!tipo || Number.isNaN(dataVigencia.getTime())) throw new Error("Tipo do projeto e data de vigência são obrigatórios.");
 
   const sequenciaNoContrato = (await prisma.projeto.count({ where: { contratoOrigemId: contratoId } })) + 1;
   const codigo = gerarCodigoProjeto(contrato.codigo, sequenciaNoContrato);
@@ -290,7 +310,7 @@ export async function criarProjetoDoContrato(formData: FormData) {
       tipo,
       contratanteId: contrato.contratanteId,
       contratoOrigemId: contrato.id,
-      dataVigencia: new Date(dataVigencia),
+      dataVigencia,
       responsavelId,
       etapas: {
         create: tipoModelo.etapas.map((etapa, i) => ({

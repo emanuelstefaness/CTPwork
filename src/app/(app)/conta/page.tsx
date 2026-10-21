@@ -9,13 +9,18 @@ import { FormMensagem } from "@/components/form-mensagem";
 export const metadata: Metadata = { title: "Minha conta" };
 
 export default async function ContaPage() {
-  const sessao = await requireSession();
+  const sessao = await requireSession({ permitirTrocaPendente: true });
   const user = await prisma.user.findUniqueOrThrow({ where: { id: sessao.id }, include: { setor: true, municipio: true } });
   const perfil = `${sessao.perfilNome} · ${user.tipo === "INTERNO" ? "equipe do CTP" : "prefeitura"}`;
 
   return (
     <div className="mx-auto max-w-4xl">
       <PageHeader title="Minha conta" description="Seus dados, sua senha e como você quer ser avisado." />
+      {sessao.trocarSenha && (
+        <p role="status" className="mb-5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900">
+          <strong>Crie sua própria senha para continuar.</strong> A senha atual foi definida por outra pessoa no seu cadastro. Use-a em &quot;Senha atual&quot; e escolha uma nova, que só você conheça.
+        </p>
+      )}
 
       <div className="grid grid-cols-[minmax(0,1fr)] gap-5 lg:grid-cols-[300px_minmax(0,1fr)] lg:items-start">
         <Panel>

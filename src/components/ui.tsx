@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
 import { ArrowLeftIcon, MagnifyingGlassIcon } from "@heroicons/react/24/outline";
+import { iniciais } from "@/lib/formatters";
 
 export function PageHeader({
   eyebrow,
@@ -94,7 +95,7 @@ const avatarTones = [
 /** Iniciais com cor estável por nome — mesma pessoa, mesma cor em qualquer tela. */
 export function Avatar({ name, size = "md" }: { name: string; size?: "sm" | "md" }) {
   const hash = [...name].reduce((acc, c) => acc + c.charCodeAt(0), 0);
-  const initials = name.split(" ").filter(Boolean).map((n) => n[0]).slice(0, 2).join("").toUpperCase();
+  const initials = iniciais(name);
   const dims = size === "sm" ? "h-6 w-6 text-[9px]" : "h-8 w-8 text-[11px]";
   return (
     <span className={`grid shrink-0 place-items-center rounded-full font-bold ${dims} ${avatarTones[hash % avatarTones.length]}`} aria-hidden>

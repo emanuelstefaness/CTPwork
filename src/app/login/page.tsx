@@ -8,9 +8,9 @@ export const metadata: Metadata = { title: "Entrar" };
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ callbackUrl?: string; sessao?: string }>;
+  searchParams: Promise<{ callbackUrl?: string; sessao?: string; senha?: string }>;
 }) {
-  const { callbackUrl, sessao } = await searchParams;
+  const { callbackUrl, sessao, senha } = await searchParams;
   // Em produção as contas de demonstração (com a senha) só aparecem se pedido explicitamente; e só
   // quando elas existem no banco (no banco limpo, sem dados de exemplo, o atalho some).
   const permitido = process.env.MOSTRAR_CONTAS_DEMO === "true" || process.env.DADOS_DEMONSTRACAO === "true" || (process.env.NODE_ENV !== "production" && process.env.MOSTRAR_CONTAS_DEMO !== "false");
@@ -42,6 +42,11 @@ export default async function LoginPage({
             <p className="text-xs font-semibold uppercase tracking-[0.14em] text-cyan-700">Bem-vindo</p>
             <h2 className="mt-2 text-2xl font-bold tracking-tight text-slate-950">Acesse sua conta</h2>
             <p className="mb-7 mt-2 text-sm leading-6 text-slate-500">Entre para acompanhar contratos, projetos e solicitações.</p>
+            {senha === "alterada" && (
+              <p role="status" className="-mt-3 mb-6 rounded-xl bg-emerald-50 px-4 py-3 text-sm leading-6 text-emerald-900">
+                Senha alterada. Entre com a nova senha — as sessões abertas em outros aparelhos também foram encerradas.
+              </p>
+            )}
             {sessao === "encerrada" && (
               <p role="status" className="-mt-3 mb-6 rounded-xl bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900">
                 Sua sessão foi encerrada. Entre novamente — se não conseguir, seu acesso pode ter sido desativado; fale com a equipe do CTP.

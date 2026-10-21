@@ -3,8 +3,15 @@ import { requireSession, assertAcessoContratante } from "@/lib/tenant";
 import { lerArquivo } from "@/lib/arquivos";
 import { podeVerContrato, podeVerProjeto } from "@/lib/visibilidade";
 
+const ABRE_NO_NAVEGADOR = new Set(["application/pdf", "image/png", "image/jpeg"]);
+
 export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
-  const user = await requireSession();
+  let user;
+  try {
+    user = await requireSession();
+  } catch {
+    return new Response("Não autenticado", { status: 401 });
+  }
   const { id } = await params;
   const anexo = await prisma.anexo.findUnique({
     where: { id },
@@ -40,10 +47,12 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
 
   const bytes = await lerArquivo(anexo.id).catch(() => null);
   if (!bytes) return new Response("Arquivo indisponível", { status: 404 });
+  // PDF e imagem abrem no navegador; o resto (Word, Excel) sempre baixa, nunca é interpretado aqui.
+  const abreNoNavegador = ABRE_NO_NAVEGADOR.has(anexo.tipoMime);
   return new Response(bytes as BodyInit, {
     headers: {
-      "Content-Type": anexo.tipoMime,
-      "Content-Disposition": `inline; filename*=UTF-8''${encodeURIComponent(anexo.nomeOriginal)}`,
+      "Content-Type": abreNoNavegador ? anexo.tipoMime : "application/octet-stream",
+      "Content-Disposition": `${abreNoNavegador ? "inline" : "attachment"}; filename*=UTF-8''${encodeURIComponent(anexo.nomeOriginal)}`,
       "Cache-Control": "private, no-store",
     },
   });

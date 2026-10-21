@@ -11,7 +11,7 @@ import type { AnotacaoView } from "./tipos";
 /** Comentário, discordância e sugestão de redação pedem uma ação do CTP; grifo e concordo são registro. */
 export const pedeAcao = (a: AnotacaoView) => a.tipo === "COMENTARIO" || a.tipo === "DISCORDO" || a.tipo === "SUGESTAO";
 
-export const estiloTipo: Record<TipoAnotacao, { chip: string; borda: string }> = {
+const estiloTipo: Record<TipoAnotacao, { chip: string; borda: string }> = {
   GRIFO: { chip: "bg-amber-50 text-amber-800 ring-amber-200", borda: "border-amber-300" },
   COMENTARIO: { chip: "bg-cyan-50 text-cyan-800 ring-cyan-200", borda: "border-cyan-400" },
   CONCORDO: { chip: "bg-emerald-50 text-emerald-800 ring-emerald-200", borda: "border-emerald-400" },
@@ -28,7 +28,7 @@ export type AcoesSugestao = {
 };
 
 /** Texto atual riscado → redação proposta, como no controle de alterações do Word. */
-export function DiffSugestao({ a, compacto = false }: { a: AnotacaoView; compacto?: boolean }) {
+function DiffSugestao({ a, compacto = false }: { a: AnotacaoView; compacto?: boolean }) {
   return (
     <div className="mt-2.5 space-y-1.5 font-serif text-xs leading-5">
       <p className="rounded-md bg-red-50 px-2 py-1 text-red-800">

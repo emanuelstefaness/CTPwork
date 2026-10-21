@@ -89,7 +89,7 @@ test.describe("Acesso e conta", () => {
     await page.getByLabel("Nova senha", { exact: true }).fill("somenteletras");
     await page.getByLabel("Repita a nova senha", { exact: true }).fill("somenteletras");
     await page.getByRole("button", { name: "Salvar nova senha" }).click();
-    await expect(erroDoFormulario(page)).toHaveText("Use letras e números na nova senha.");
+    await expect(erroDoFormulario(page)).toHaveText("Use letras e números na senha.");
 
     await page.getByLabel("Nova senha", { exact: true }).fill("NovaSenha2026");
     await page.getByLabel("Repita a nova senha", { exact: true }).fill("NovaSenha2026");
@@ -119,7 +119,7 @@ test.describe("Acesso e conta", () => {
     await page.getByLabel("Nova senha", { exact: true }).fill("Helena2026x");
     await page.getByLabel("Repita a nova senha", { exact: true }).fill("Helena2026x");
     await page.getByRole("button", { name: "Alterar senha" }).click();
-    await expect(page.getByRole("status")).toHaveText("Senha alterada.");
+    await expect(page.getByRole("status")).toContainText("Senha alterada.");
 
     await entrar(page, MUNICIPIO.helena, "Helena2026x");
 
@@ -129,6 +129,6 @@ test.describe("Acesso e conta", () => {
     await page.getByLabel("Nova senha", { exact: true }).fill(SENHA);
     await page.getByLabel("Repita a nova senha", { exact: true }).fill(SENHA);
     await page.getByRole("button", { name: "Alterar senha" }).click();
-    await expect(page.getByRole("status")).toHaveText("Senha alterada.");
+    await expect(page.getByRole("status")).toContainText("Senha alterada.");
   });
 });

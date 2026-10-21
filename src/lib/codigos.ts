@@ -1,4 +1,20 @@
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+
+/**
+ * Cria o registro com o próximo código livre. Se outro cadastro feito no mesmo instante pegou o
+ * mesmo número (código é único no banco), tenta o seguinte em vez de falhar.
+ */
+export async function comCodigoUnico<T>(gerar: () => Promise<string>, criar: (codigo: string) => Promise<T>): Promise<T> {
+  for (let tentativa = 1; ; tentativa++) {
+    try {
+      return await criar(await gerar());
+    } catch (e) {
+      const repetido = e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002";
+      if (!repetido || tentativa >= 5) throw e;
+    }
+  }
+}
 
 /**
  * Próximo número sequencial a partir do maior sufixo "-NNNNNN" já usado com este

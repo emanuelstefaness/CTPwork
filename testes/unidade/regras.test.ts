@@ -2,6 +2,7 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { estaNaoLida } from "@/lib/conversas";
 import { bloqueado, limpar, registrarFalha } from "@/lib/limite-tentativas";
+import { problemaDaSenha } from "@/lib/senha";
 
 describe("conversa não lida", () => {
   const agora = new Date("2026-09-24T12:00:00Z");
@@ -31,22 +32,37 @@ describe("conversa não lida", () => {
   });
 });
 
-describe("limite de tentativas", () => {
-  it("bloqueia ao atingir o máximo e libera depois de limpar", () => {
+describe("limite de tentativas (gravado no banco)", () => {
+  it("bloqueia ao atingir o máximo e libera depois de limpar", async () => {
     const chave = `teste-${Math.random()}`;
-    for (let i = 0; i < 4; i++) registrarFalha(chave, 60_000);
-    assert.equal(bloqueado(chave, 5, 60_000), 0, "4 falhas ainda não bloqueiam");
-    registrarFalha(chave, 60_000);
-    assert.ok(bloqueado(chave, 5, 60_000) > 0, "a 5ª falha bloqueia");
-    limpar(chave);
-    assert.equal(bloqueado(chave, 5, 60_000), 0);
+    for (let i = 0; i < 4; i++) await registrarFalha(chave);
+    assert.equal(await bloqueado(chave, 5, 60_000), 0, "4 falhas ainda não bloqueiam");
+    await registrarFalha(chave);
+    assert.ok((await bloqueado(chave, 5, 60_000)) > 0, "a 5ª falha bloqueia");
+    await limpar(chave);
+    assert.equal(await bloqueado(chave, 5, 60_000), 0);
   });
 
   it("a janela expira sozinha", async () => {
     const chave = `teste-${Math.random()}`;
-    for (let i = 0; i < 5; i++) registrarFalha(chave, 50);
-    assert.ok(bloqueado(chave, 5, 50) > 0);
-    await new Promise((r) => setTimeout(r, 80));
-    assert.equal(bloqueado(chave, 5, 50), 0);
+    for (let i = 0; i < 5; i++) await registrarFalha(chave);
+    assert.ok((await bloqueado(chave, 5, 400)) > 0);
+    await new Promise((r) => setTimeout(r, 450));
+    assert.equal(await bloqueado(chave, 5, 400), 0);
+    await limpar(chave);
+  });
+});
+
+describe("regras de senha", () => {
+  it("exige 8 caracteres, letras e números", () => {
+    assert.match(problemaDaSenha("abc123") ?? "", /8 caracteres/);
+    assert.match(problemaDaSenha("somenteletras") ?? "", /letras e números/);
+    assert.match(problemaDaSenha("12345678") ?? "", /letras e números/);
+    assert.equal(problemaDaSenha("Prefeitura2026"), null);
+    assert.equal(problemaDaSenha("ação2026ok"), null, "letras acentuadas valem como letras");
+  });
+
+  it("recusa senha acima de 72 bytes (o bcrypt ignoraria o resto)", () => {
+    assert.match(problemaDaSenha(`a1${"x".repeat(71)}`) ?? "", /72/);
   });
 });

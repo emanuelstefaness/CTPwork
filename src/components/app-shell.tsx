@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { NavLink, type NavIcon } from "@/components/nav-link";
+import { iniciais } from "@/lib/formatters";
 import {
   ArrowRightStartOnRectangleIcon,
   Bars3Icon,
@@ -36,7 +37,7 @@ export function AppShell({
   children: React.ReactNode;
 }) {
   const [open, setOpen] = useState(false);
-  const initials = userName.split(" ").map((n) => n[0]).slice(0, 2).join("");
+  const initials = iniciais(userName);
 
   return (
     <div className="min-h-screen bg-[#f4f7fa]">

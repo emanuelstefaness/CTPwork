@@ -77,7 +77,7 @@ export async function responderFormularioEtapa(formData: FormData) {
   if (modelo) {
     const campos = JSON.parse(modelo.campos) as { chave: string; obrigatorio: boolean }[];
     for (const campo of campos) {
-      const v = String(formData.get(campo.chave) ?? "").trim();
+      const v = String(formData.get(campo.chave) ?? "").trim().slice(0, 5000);
       if (campo.obrigatorio && !v) throw new Error(`Campo obrigatório ausente: ${campo.chave}`);
       respostas[campo.chave] = v;
     }
@@ -101,10 +101,9 @@ export async function definirPrazoEtapa(formData: FormData) {
   exigir(user, "projeto.gerenciar");
 
   const prazoRaw = String(formData.get("prazo") ?? "");
-  await prisma.etapaProjeto.update({
-    where: { id: etapaId },
-    data: { prazo: prazoRaw ? new Date(prazoRaw) : null },
-  });
+  const prazo = prazoRaw ? new Date(prazoRaw) : null;
+  if (prazo && Number.isNaN(prazo.getTime())) throw new Error("Data de prazo inválida.");
+  await prisma.etapaProjeto.update({ where: { id: etapaId }, data: { prazo } });
   revalidatePath(`/projetos/${etapa.projetoId}`);
 }
 
@@ -113,7 +112,7 @@ export async function criarItemChecklist(formData: FormData) {
   const { user, etapa } = await assertAcessoEtapa(etapaId);
   exigir(user, "projeto.gerenciar");
 
-  const nome = String(formData.get("nome") ?? "").trim();
+  const nome = String(formData.get("nome") ?? "").trim().slice(0, 200);
   if (!nome) throw new Error("Nome do item é obrigatório.");
 
   await prisma.checklistItem.create({ data: { etapaId, nome, status: "PENDENTE" } });
@@ -125,6 +124,7 @@ export async function enviarArquivoChecklist(formData: FormData) {
   const item = await prisma.checklistItem.findUniqueOrThrow({ where: { id: itemId } });
   const { user, etapa } = await assertAcessoEtapa(item.etapaId);
   exigir(user, "etapa.enviar");
+  if (item.status === "APROVADO") throw new Error("Este documento já foi aprovado pelo CTP.");
 
   const file = formData.get("arquivo") as File | null;
   if (!file || file.size === 0) throw new Error("Selecione um arquivo.");
@@ -141,6 +141,7 @@ export async function aprovarItemChecklist(itemId: string) {
   const item = await prisma.checklistItem.findUniqueOrThrow({ where: { id: itemId } });
   const { user, etapa } = await assertAcessoEtapa(item.etapaId);
   exigir(user, "projeto.gerenciar");
+  if (item.status !== "ENVIADO") throw new Error("Só dá para aprovar um documento já enviado.");
 
   await prisma.checklistItem.update({ where: { id: itemId }, data: { status: "APROVADO" } });
   await registrarAuditoria({ userId: user.id, acao: "APROVAR_CHECKLIST", entidadeTipo: "ChecklistItem", entidadeId: itemId });
@@ -175,7 +176,7 @@ export async function enviarMensagemChat(formData: FormData) {
   const etapaId = String(formData.get("etapaId"));
   const { user, etapa } = await assertAcessoEtapa(etapaId);
 
-  const texto = String(formData.get("texto") ?? "").trim();
+  const texto = String(formData.get("texto") ?? "").trim().slice(0, 10000);
   const file = formData.get("arquivo") as File | null;
   if (!texto && (!file || file.size === 0)) throw new Error("Escreva uma mensagem ou anexe um arquivo.");
 
@@ -224,10 +225,11 @@ export async function enviarMensagemChat(formData: FormData) {
 export async function reabrirEtapa(formData: FormData) {
   const user = await exigirPermissao("projeto.reabrir");
   const etapaId = String(formData.get("etapaId"));
-  const motivo = String(formData.get("motivo") ?? "").trim();
+  const motivo = String(formData.get("motivo") ?? "").trim().slice(0, 1000);
   if (!motivo) throw new Error("Informe o motivo da reabertura.");
 
   const etapa = await prisma.etapaProjeto.findUniqueOrThrow({ where: { id: etapaId } });
+  await assertVeProjeto(user, etapa.projetoId);
   await prisma.etapaProjeto.update({ where: { id: etapaId }, data: { status: "EM_ANDAMENTO" } });
   await registrarAuditoria({ userId: user.id, acao: "REABRIR_ETAPA", entidadeTipo: "EtapaProjeto", entidadeId: etapaId, detalhe: motivo });
   revalidatePath(`/projetos/${etapa.projetoId}`);

@@ -5,6 +5,7 @@ import {
 } from "docx";
 import type { Mark, Node as PMNode } from "@tiptap/pm/model";
 import { TIPO_ANOTACAO_LABEL, type TipoAnotacao } from "./extensoes";
+import { iniciais } from "@/lib/formatters";
 
 /**
  * Exporta uma versão do documento para .docx. Grifos viram marca-texto do Word e comentários,
@@ -41,7 +42,6 @@ function highlightDoHex(hex: string | undefined) {
   return HighlightColor.YELLOW;
 }
 
-const iniciais = (nome: string) => nome.split(" ").filter(Boolean).map((p) => p[0]).slice(0, 2).join("").toUpperCase();
 
 const ALINHAMENTO: Record<string, (typeof AlignmentType)[keyof typeof AlignmentType]> = {
   left: AlignmentType.LEFT,

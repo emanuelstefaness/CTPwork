@@ -15,6 +15,8 @@ import {
   FolderOpenIcon,
 } from "@heroicons/react/24/outline";
 
+const ACOES_DE_CONTA = ["ENTRAR", "ALTERAR_SENHA", "REDEFINIR_SENHA", "SOLICITAR_REDEFINICAO_SENHA"];
+
 export const metadata: Metadata = { title: "Visão geral" };
 
 const auditLabels: Record<string, string> = {
@@ -85,7 +87,8 @@ export default async function DashboardPage() {
       include: { projeto: { include: { contratante: true } }, responsavel: true },
       orderBy: { prazo: "asc" }, take: 5,
     }),
-    prisma.auditLog.findMany({ include: { user: true }, orderBy: { createdAt: "desc" }, take: 6 }),
+    // Entradas e trocas de senha ficam na auditoria, mas não são "atividade" dos projetos.
+    prisma.auditLog.findMany({ where: { acao: { notIn: ACOES_DE_CONTA } }, include: { user: true }, orderBy: { createdAt: "desc" }, take: 6 }),
     prisma.etapaProjeto.count({ where: { prazo: { not: null, lte: criticalLimit }, status: { not: "CONCLUIDA" } } }),
   ]);
 

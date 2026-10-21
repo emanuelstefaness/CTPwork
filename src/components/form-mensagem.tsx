@@ -36,7 +36,10 @@ export function FormMensagem({
           if (limpar) form.reset();
           setRetorno({ ok: true, texto: r.dados.mensagem });
         } else setRetorno({ ok: false, texto: r.erro });
-      } catch {
+      } catch (err) {
+        // redirect() da action (ex.: depois de trocar a senha, volta para a entrada): deixa navegar.
+        const digest = (err as { digest?: unknown } | null)?.digest;
+        if (typeof digest === "string" && digest.startsWith("NEXT_")) throw err;
         setRetorno({ ok: false, texto: "Não foi possível enviar. Verifique sua conexão e tente de novo." });
       }
     });
